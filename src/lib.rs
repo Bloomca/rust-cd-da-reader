@@ -1,3 +1,4 @@
+mod macos;
 mod parse_toc;
 mod windows;
 mod windows_read_track;
@@ -17,4 +18,5 @@ pub struct Toc {
     pub tracks: Vec<Track>,
 }
 
+pub use macos::{mac_read_toc, mac_start_da_guard, mac_stop_da_guard};
 pub use windows::CdDevice;

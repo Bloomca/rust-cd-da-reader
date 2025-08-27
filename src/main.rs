@@ -1,4 +1,4 @@
-use cd_da_reader::CdDevice;
+use cd_da_reader::{CdDevice, mac_read_toc, mac_start_da_guard, mac_stop_da_guard};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     read_cd()?;
@@ -22,6 +22,11 @@ fn read_cd() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(target_os = "macos")]
 fn read_cd() -> Result<(), Box<dyn std::error::Error>> {
+    mac_start_da_guard("disk4");
+    let toc = mac_read_toc("disk4")?; // // matches /dev/disk4
+    mac_stop_da_guard();
+    println!("{:#?}", toc);
+
     Ok(())
 }
 
