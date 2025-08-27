@@ -28,9 +28,13 @@ pub fn mac_read_toc(path: &str) -> std::io::Result<Toc> {
         len,
         &data[..16.min(data.len())]
     );
+
+    // `.to_vec()` will copy the data, so we can free it safely after
+    let result = parse_toc(data.to_vec());
+
     unsafe { cd_free(buf as *mut _) };
 
-    parse_toc(data.to_vec())
+    result
 }
 
 pub fn mac_start_da_guard(path: &str) {
