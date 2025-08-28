@@ -115,7 +115,7 @@ impl CdDevice {
         parse_toc::parse_toc(data)
     }
 
-    pub fn read_track(&self, toc: Toc, track_no: u8) -> std::io::Result<Vec<u8>> {
+    pub fn read_track(&self, toc: &Toc, track_no: u8) -> std::io::Result<Vec<u8>> {
         windows_read_track::read_track(self.handle, toc, track_no)
     }
 }

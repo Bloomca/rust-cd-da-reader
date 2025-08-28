@@ -11,7 +11,7 @@ use windows_sys::Win32::System::IO::DeviceIoControl;
 use crate::Toc;
 use crate::windows::SptdWithSense;
 
-pub fn read_track(handle: HANDLE, toc: Toc, track_no: u8) -> std::io::Result<Vec<u8>> {
+pub fn read_track(handle: HANDLE, toc: &Toc, track_no: u8) -> std::io::Result<Vec<u8>> {
     let idx = toc
         .tracks
         .iter()

@@ -18,5 +18,5 @@ pub struct Toc {
     pub tracks: Vec<Track>,
 }
 
-pub use macos::{mac_read_toc, mac_start_da_guard, mac_stop_da_guard};
+pub use macos::{mac_read_toc, mac_read_track, mac_start_da_guard, mac_stop_da_guard};
 pub use windows::CdDevice;
