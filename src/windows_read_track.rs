@@ -2,15 +2,20 @@ use std::cmp::min;
 use std::mem;
 use std::ptr;
 
-use windows_sys::Win32::Foundation::{HANDLE, CloseHandle, INVALID_HANDLE_VALUE, GENERIC_READ, GENERIC_WRITE};
+use windows_sys::Win32::Foundation::HANDLE;
+use windows_sys::Win32::Storage::IscsiDisc::{
+    IOCTL_SCSI_PASS_THROUGH_DIRECT, SCSI_IOCTL_DATA_IN, SCSI_PASS_THROUGH_DIRECT,
+};
 use windows_sys::Win32::System::IO::DeviceIoControl;
-use windows_sys::Win32::Storage::IscsiDisc::{SCSI_PASS_THROUGH_DIRECT, SCSI_IOCTL_DATA_IN, IOCTL_SCSI_PASS_THROUGH_DIRECT};
 
 use crate::Toc;
-use crate::SptdWithSense;
+use crate::windows::SptdWithSense;
 
-pub fn read_track(handle: HANDLE, toc: Toc, track_no: u8) -> std::io::Result<Vec<u8>> {
-    let idx = toc.tracks.iter().position(|t| t.number == track_no)
+pub fn read_track(handle: HANDLE, toc: &Toc, track_no: u8) -> std::io::Result<Vec<u8>> {
+    let idx = toc
+        .tracks
+        .iter()
+        .position(|t| t.number == track_no)
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "track not in TOC"))?;
 
     let start_lba = toc.tracks[idx].start_lba as u32;
@@ -20,11 +25,16 @@ pub fn read_track(handle: HANDLE, toc: Toc, track_no: u8) -> std::io::Result<Vec
         toc.tracks[idx + 1].start_lba as u32
     } else {
         // read_leadout_lba(handle)?
-        return Err(std::io::Error::other("Last track is not supported right now"));
+        return Err(std::io::Error::other(
+            "Last track is not supported right now",
+        ));
     };
 
     if end_lba <= start_lba {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "bad TOC bounds"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "bad TOC bounds",
+        ));
     }
 
     let sectors = end_lba - start_lba;
@@ -82,7 +92,7 @@ fn read_cd_audio_range(handle: HANDLE, start_lba: u32, sectors: u32) -> std::io:
         cdb[10] = 0x00; // Control
         cdb[11] = 0x00;
 
-         let mut bytes = 0u32;
+        let mut bytes = 0u32;
         let ok = unsafe {
             DeviceIoControl(
                 handle,
@@ -102,7 +112,10 @@ fn read_cd_audio_range(handle: HANDLE, start_lba: u32, sectors: u32) -> std::io:
         if wrapper.sptd.ScsiStatus != 0 {
             eprintln!("READ CD: SCSI status 0x{:02X}", wrapper.sptd.ScsiStatus);
             eprintln!("Sense: {:02X?}", &wrapper.sense);
-            return Err(std::io::Error::new(std::io::ErrorKind::Other, "READ CD failed (CHECK CONDITION)"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "READ CD failed (CHECK CONDITION)",
+            ));
         }
 
         out.extend_from_slice(&chunk);

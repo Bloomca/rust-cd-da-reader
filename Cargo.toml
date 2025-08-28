@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+libc = "0.2.175"
 windows-sys = { version = "0.60.2", features = [
     "Win32_Foundation",
     "Win32_Storage_FileSystem", 
@@ -12,3 +13,6 @@ windows-sys = { version = "0.60.2", features = [
     "Win32_System_IO",
     "Win32_Storage_IscsiDisc",
 ]}
+
+[build-dependencies]
+cc = "1.2.34"
