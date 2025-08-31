@@ -8,7 +8,10 @@ pub fn parse_toc(data: Vec<u8>) -> std::io::Result<Toc> {
     // Bytes 4+: Track descriptors (8 bytes each)
 
     if data.len() < 4 {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "TOC data too short"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "TOC data too short",
+        ));
     }
 
     let toc_length = u16::from_be_bytes([data[0], data[1]]) as usize;
@@ -44,7 +47,7 @@ pub fn parse_toc(data: Vec<u8>) -> std::io::Result<Toc> {
         } else {
             lead_out_lba = Some(lba);
         }
-        
+
         offset += 8;
     }
 
@@ -53,16 +56,18 @@ pub fn parse_toc(data: Vec<u8>) -> std::io::Result<Toc> {
             first_track,
             last_track,
             tracks,
-            leadout_lba: leadout
+            leadout_lba: leadout,
         })
     } else {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Didn't find 0xAA"));
+        Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Didn't find 0xAA",
+        ))
     }
 }
 
-
 fn lba_to_msf(lba: u32) -> (u8, u8, u8) {
-    let total_frames = lba + 150;  // MSF addresses are offset by 150
+    let total_frames = lba + 150; // MSF addresses are offset by 150
     let minutes = (total_frames / 75 / 60) as u8;
     let seconds = ((total_frames / 75) % 60) as u8;
     let frames = (total_frames % 75) as u8;
