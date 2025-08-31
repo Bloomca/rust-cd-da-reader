@@ -10,10 +10,7 @@ use crate::parse_toc::parse_toc;
 use crate::utils::get_track_bounds;
 
 const SG_INFO_CHECK: u32 = 0x1;
-const SG_DXFER_NONE: i32 = -1;
-const SG_DXFER_TO_DEV: i32 = -2;
 const SG_DXFER_FROM_DEV: i32 = -3;
-const SG_DXFER_TO_FROM_DEV: i32 = -4;
 
 // see more info here: https://tldp.org/HOWTO/SCSI-Generic-HOWTO/sg_io_hdr_t.html
 #[repr(C)]
@@ -131,7 +128,7 @@ pub fn read_toc() -> Result<Toc> {
 
     // Check if the ioctl itself succeeded
     if hdr.info & SG_INFO_CHECK != 0 {
-        return Err(Error::new(ErrorKind::Other, "SG_IO check failed"));
+        return Err(Error::other("SG_IO check failed"));
     }
 
     // Check SCSI status
@@ -148,17 +145,14 @@ pub fn read_toc() -> Result<Toc> {
 
         // If there's sense data, parse it for more details
         if hdr.sb_len_wr > 0 {
-            let sense_key = (sense[2] & 0x0F) as u8;
+            let sense_key = (sense[2] & 0x0F);
             let asc = sense[12]; // Additional Sense Code
             let ascq = sense[13]; // Additional Sense Code Qualifier
 
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!(
-                    "SCSI error: {} (status=0x{:02x}, sense_key=0x{:x}, asc=0x{:02x}, ascq=0x{:02x})",
-                    error_msg, hdr.status, sense_key, asc, ascq
-                ),
-            ));
+            return Err(Error::other(format!(
+                "SCSI error: {} (status=0x{:02x}, sense_key=0x{:x}, asc=0x{:02x}, ascq=0x{:02x})",
+                error_msg, hdr.status, sense_key, asc, ascq
+            )));
         } else {
             return Err(Error::new(
                 ErrorKind::Other,
@@ -267,22 +261,16 @@ fn read_cd_audio_range(start_lba: u32, sectors: u32) -> std::io::Result<Vec<u8>>
 
             // If there's sense data, parse it for more details
             if hdr.sb_len_wr > 0 {
-                let sense_key = (sense[2] & 0x0F) as u8;
+                let sense_key = (sense[2] & 0x0F);
                 let asc = sense[12]; // Additional Sense Code
                 let ascq = sense[13]; // Additional Sense Code Qualifier
 
-                return Err(Error::new(
-                    ErrorKind::Other,
-                    format!(
-                        "SCSI error: {} (status=0x{:02x}, sense_key=0x{:x}, asc=0x{:02x}, ascq=0x{:02x})",
-                        error_msg, hdr.status, sense_key, asc, ascq
-                    ),
-                ));
+                return Err(Error::other(format!(
+                    "SCSI error: {} (status=0x{:02x}, sense_key=0x{:x}, asc=0x{:02x}, ascq=0x{:02x})",
+                    error_msg, hdr.status, sense_key, asc, ascq
+                )));
             } else {
-                return Err(Error::new(
-                    ErrorKind::Other,
-                    format!("SCSI error: {}", error_msg),
-                ));
+                return Err(Error::other(ErrorKind::Other));
             }
         }
 
