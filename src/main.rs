@@ -12,10 +12,9 @@ fn read_cd() -> Result<(), Box<dyn std::error::Error>> {
     println!("{:#?}", toc);
 
     let data = reader.read_track(&toc, 11)?;
+    let wav_track = CdReader::create_wav(data);
 
-    let mut header = create_wav_header(data.len() as u32);
-    header.extend_from_slice(&data);
-    std::fs::write("myfile.wav", header)?;
+    std::fs::write("myfile.wav", wav_track)?;
 
     Ok(())
 }
