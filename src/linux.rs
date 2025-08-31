@@ -267,7 +267,7 @@ fn read_cd_audio_range(start_lba: u32, sectors: u32) -> std::io::Result<Vec<u8>>
                     error_msg, hdr.status, sense_key, asc, ascq
                 )));
             } else {
-                return Err(Error::other(ErrorKind::Other));
+                return Err(Error::other(format!("SCSI error: {}", error_msg)));
             }
         }
 
