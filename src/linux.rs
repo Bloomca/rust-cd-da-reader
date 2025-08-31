@@ -2,7 +2,7 @@ use libc::{O_NONBLOCK, O_RDWR, c_uchar, c_void};
 use std::cmp::min;
 use std::ffi::CString;
 use std::fs::File;
-use std::io::{Error, ErrorKind, Result};
+use std::io::{Error, Result};
 use std::os::fd::{AsRawFd, FromRawFd};
 
 use crate::Toc;
