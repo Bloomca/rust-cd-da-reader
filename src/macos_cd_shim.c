@@ -104,8 +104,6 @@ static io_service_t find_media(const char *bsdName) {
     io_iterator_t it = IO_OBJECT_NULL;
     io_service_t svc = IO_OBJECT_NULL;
 
-    printf("[DEBUG] Looking for BSD name: %s\n", bsdName);
-
     CFMutableDictionaryRef match = IOBSDNameMatching(kIOMainPortDefault, 0, bsdName);
     if (!match) {
         printf("[ERROR] Failed at IOBSDNameMatching for %s\n", bsdName);
@@ -117,18 +115,14 @@ static io_service_t find_media(const char *bsdName) {
         printf("[ERROR] Failed at IOServiceGetMatchingServices for %s (error: 0x%x)\n", bsdName, kr);
         return IO_OBJECT_NULL;
     }
-
-    printf("[DEBUG] Got service iterator, looking for services...\n");
     
     io_service_t cur;
     int service_count = 0;
     while ((cur = IOIteratorNext(it))) {
         service_count++;
-        printf("[DEBUG] Found service #%d, checking for CD media...\n", service_count);
         
         // Check if this service directly conforms to IOCDMedia
         if (IOObjectConformsTo(cur, kIOCDMediaClass)) {
-            printf("[DEBUG] Service directly conforms to IOCDMedia!\n");
             svc = cur;
             IOObjectRetain(svc); // Retain since we're keeping it
             IOObjectRelease(cur); // Release our iterator reference
@@ -144,10 +138,8 @@ static io_service_t find_media(const char *bsdName) {
         while (node && parent_depth < 10) { // Limit depth to prevent infinite loops
             char className[256];
             IOObjectGetClass(node, className);
-            printf("[DEBUG] Checking parent at depth %d: %s\n", parent_depth, className);
             
             if (IOObjectConformsTo(node, kIOCDMediaClass)) {
-                printf("[DEBUG] Found IOCDMedia at parent depth %d!\n", parent_depth);
                 svc = node;
                 IOObjectRetain(svc); // Retain since we're keeping it
                 found_cd_media = true;
@@ -157,7 +149,6 @@ static io_service_t find_media(const char *bsdName) {
             // Get parent
             io_iterator_t pit = IO_OBJECT_NULL;
             if (IORegistryEntryGetParentIterator(node, kIOServicePlane, &pit) != KERN_SUCCESS) {
-                printf("[DEBUG] No more parents at depth %d\n", parent_depth);
                 break;
             }
             
@@ -179,12 +170,6 @@ static io_service_t find_media(const char *bsdName) {
     }
     
     IOObjectRelease(it);
-    
-    if (svc) {
-        printf("[SUCCESS] Found CD media service for %s\n", bsdName);
-    } else {
-        printf("[ERROR] Could not find CD media service for %s (checked %d services)\n", bsdName, service_count);
-    }
     
     return svc;
 }
@@ -230,7 +215,6 @@ Boolean get_dev_svc(const char *bsdName) {
         return false;
     } else {
         globalDevSvc = devSvc;
-        fprintf(stderr, "[TOC] Found device successfully\n");
         return true;
     }
 }
@@ -249,12 +233,9 @@ static Boolean read_toc(uint8_t **outBuf, uint32_t *outLen) {
     SCSITaskInterface **task = NULL;
 
     io_service_t devSvc = globalDevSvc;
-    fprintf(stderr, "[TOC] After finding device\n");
 
     if (!devSvc) {
         fprintf(stderr, "[TOC] Could not find mmc device for bsd\n"); goto fail;
-    } else {
-        fprintf(stderr, "[TOC] Found device successfully\n");
     }
 
     kern_return_t kret = IOCreatePlugInInterfaceForService(
@@ -269,14 +250,10 @@ static Boolean read_toc(uint8_t **outBuf, uint32_t *outLen) {
         fprintf(stderr, "[TOC] IOCreatePlugInInterfaceForService failed: 0x%x\n", kret);
         goto fail;
     }
-    fprintf(stderr, "[TOC] After calling IOCreatePlugInInterfaceForService\n");
     HRESULT hr = (*plugin)->QueryInterface(plugin, CFUUIDGetUUIDBytes(kIOMMCDeviceInterfaceID), (LPVOID)&mmc);
-    fprintf(stderr, "[TOC] After calling QueryInterface\n");
 
     dev = (*mmc)->GetSCSITaskDeviceInterface(mmc);
     if (!dev) { fprintf(stderr, "GetSCSITaskDeviceInterface failed\n"); goto fail; }
-
-    fprintf(stderr, "[TOC] Got non-null GetSCSITaskDeviceInterface\n");
 
     // We need to get exclusive access, otherwise `CreateSCSITask` will fail
     // in order to do so, we need to unmount the disk, claim it and make sure
@@ -359,7 +336,6 @@ bool read_cd_audio(uint32_t lba, uint32_t sectors, uint8_t **outBuf, uint32_t *o
     SCSITaskDeviceInterface **dev = NULL;
 
     io_service_t devSvc = globalDevSvc;
-    fprintf(stderr, "[READ] After finding device\n");
 
     if (!devSvc) {
         fprintf(stderr, "[READ] Could not find mmc device for bsd\n");

@@ -41,11 +41,6 @@ pub fn read_toc() -> std::io::Result<Toc> {
         return Err(std::io::Error::other("TOC read failed"));
     }
     let data = unsafe { slice::from_raw_parts(buf, len as usize) };
-    println!(
-        "TOC len={}, first 16 bytes: {:02X?}",
-        len,
-        &data[..16.min(data.len())]
-    );
 
     // `.to_vec()` will copy the data, so we can free it safely after
     let result = parse_toc(data.to_vec());
@@ -67,11 +62,6 @@ pub fn read_track(toc: &Toc, track_no: u8) -> std::io::Result<Vec<u8>> {
     }
 
     let data = unsafe { slice::from_raw_parts(buf, len as usize) };
-    println!(
-        "TOC len={}, first 16 bytes: {:02X?}",
-        len,
-        &data[..16.min(data.len())]
-    );
 
     // `.to_vec()` will copy the data, so we can free it safely after
     let result = data.to_vec();
