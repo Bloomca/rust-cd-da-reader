@@ -145,14 +145,17 @@ pub fn read_toc() -> Result<Toc> {
 
         // If there's sense data, parse it for more details
         if hdr.sb_len_wr > 0 {
-            let sense_key = (sense[2] & 0x0F);
+            let sense_key = sense[2] & 0x0F;
             let asc = sense[12]; // Additional Sense Code
             let ascq = sense[13]; // Additional Sense Code Qualifier
 
-            return Err(Error::other(format!(
-                "SCSI error: {} (status=0x{:02x}, sense_key=0x{:x}, asc=0x{:02x}, ascq=0x{:02x})",
-                error_msg, hdr.status, sense_key, asc, ascq
-            )));
+            return Err(Error::new(
+                ErrorKind::Other,
+                format!(
+                    "SCSI error: {} (status=0x{:02x}, sense_key=0x{:x}, asc=0x{:02x}, ascq=0x{:02x})",
+                    error_msg, hdr.status, sense_key, asc, ascq
+                ),
+            ));
         } else {
             return Err(Error::new(
                 ErrorKind::Other,
@@ -261,14 +264,17 @@ fn read_cd_audio_range(start_lba: u32, sectors: u32) -> std::io::Result<Vec<u8>>
 
             // If there's sense data, parse it for more details
             if hdr.sb_len_wr > 0 {
-                let sense_key = (sense[2] & 0x0F);
+                let sense_key = sense[2] & 0x0F;
                 let asc = sense[12]; // Additional Sense Code
                 let ascq = sense[13]; // Additional Sense Code Qualifier
 
-                return Err(Error::other(format!(
-                    "SCSI error: {} (status=0x{:02x}, sense_key=0x{:x}, asc=0x{:02x}, ascq=0x{:02x})",
-                    error_msg, hdr.status, sense_key, asc, ascq
-                )));
+                return Err(Error::new(
+                    ErrorKind::Other,
+                    format!(
+                        "SCSI error: {} (status=0x{:02x}, sense_key=0x{:x}, asc=0x{:02x}, ascq=0x{:02x})",
+                        error_msg, hdr.status, sense_key, asc, ascq
+                    ),
+                ));
             } else {
                 return Err(Error::other(ErrorKind::Other));
             }
