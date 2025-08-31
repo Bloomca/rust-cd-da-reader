@@ -9,8 +9,8 @@ use windows_sys::Win32::Storage::IscsiDisc::{
 use windows_sys::Win32::System::IO::DeviceIoControl;
 
 use crate::Toc;
-use crate::windows::SptdWithSense;
 use crate::utils::get_track_bounds;
+use crate::windows::SptdWithSense;
 
 pub fn read_track(handle: HANDLE, toc: &Toc, track_no: u8) -> std::io::Result<Vec<u8>> {
     let (start_lba, sectors) = get_track_bounds(toc, track_no)?;
