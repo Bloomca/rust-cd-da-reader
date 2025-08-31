@@ -2,6 +2,11 @@
 name = "cd-da-reader"
 version = "0.1.0"
 edition = "2024"
+description = "CD-DA (audio CD) reading library"
+repository = "https://github.com/Bloomca/rust-cd-da-reader"
+license = "MIT"
+keywords = ["audio CD", "CD-DA"]
+exclude = ["target", "Cargo.lock"]
 
 [dependencies]
 

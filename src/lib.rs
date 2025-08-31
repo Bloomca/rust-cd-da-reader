@@ -1,19 +1,19 @@
 //! # CD-DA (or audio CD) reading library
-//! 
+//!
 //! This library provides cross-platform audio CD reading capability,
 //! it works on Windows, macOS and Linux.
 //! It is intended to be a low-level library, and only allows you read
 //! TOC and tracks, and you need to provide valid CD drive name.
 //! Currently, the functionality is very basic, and there is no way to
 //! specify subchannel info, access hidden track or read CD text.
-//! 
+//!
 //! The library works by issuing direct SCSI commands.
-//! 
+//!
 //! ## Example
-//! 
+//!
 //! ```
-//! use your_crate::CdReader;
-//! 
+//! use cd_da_reader::CdReader;
+//!
 //! fn read_cd() -> Result<(), Box<dyn std::error::Error>> {
 //!   let reader = CdReader::open(r"\\.\E:")?;
 //!   let toc = reader.read_toc()?;
@@ -24,14 +24,14 @@
 //!   Ok(())
 //! }
 //! ```
-//! 
+//!
 //! This function reads an audio CD on Windows, you can check your drive letter
 //! in the File Explorer. On macOS, you can run `diskutil list` and look for the
 //! Audio CD in the list (it should be something like "disk4"), and on Linux you
 //! can check it using `cat /proc/sys/dev/cdrom/info`, it will be like "/dev/sr0".
-//! 
+//!
 //! ## Metadata
-//! 
+//!
 //! This library does not provide any direct metadata, and audio CDs typically do
 //! not carry it by themselves. To obtain it, you'd need to get it from a place like
 //! [MusicBrainz](https://musicbrainz.org/). You should have all necessary information
@@ -83,7 +83,7 @@ pub struct Toc {
 
 /// Helper struct to interact with the audio CD. While it doesn't hold any internal data
 /// directly, it implements `Drop` trait, so that the CD drive handle is properly closed.
-/// 
+///
 /// Please note that you should not read multiple CDs at the same time, and preferably do
 /// not use it in multiple threads. CD drives are a physical thing and they really want to
 /// have exclusive access, because of that currently only sequential access is supported.
@@ -91,21 +91,21 @@ pub struct CdReader {}
 
 impl CdReader {
     /// Opens a CD drive at the specified path in order to read data.
-    /// 
+    ///
     /// It is crucial to call this function and not to create the Reader
     /// by yourself, as each OS needs its own way of handling the drive acess.
-    /// 
+    ///
     /// You don't need to close the drive, it will be handled automatically
     /// when the `CdReader` is dropped. On macOS, that will cause the CD drive
     /// to be remounted, and the default application (like Apple Music) will
     /// be called.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `path` - The device path (e.g., "/dev/sr0" on Linux, "disk6" on macOS, and r"\\.\E:" on Windows)
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns an error if the drive cannot be opened
     pub fn open(path: &str) -> std::io::Result<Self> {
         #[cfg(target_os = "windows")]
@@ -135,9 +135,9 @@ impl CdReader {
     /// While this is a low-level library and does not include any codecs to compress the audio,
     /// it includes a helper function to convert raw PCM data into a wav file, which is done by
     /// prepending a 44 RIFF bytes header
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `data` - vector of bytes received from `read_track` function
     pub fn create_wav(data: Vec<u8>) -> Vec<u8> {
         let mut header = utils::create_wav_header(data.len() as u32);
