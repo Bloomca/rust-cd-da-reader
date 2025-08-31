@@ -1,4 +1,4 @@
-use cd_da_reader::{CdDevice, mac_read_toc, mac_read_track, mac_start_da_guard, mac_stop_da_guard};
+use cd_da_reader::CdReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     read_cd()?;
@@ -7,7 +7,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(target_os = "windows")]
 fn read_cd() -> Result<(), Box<dyn std::error::Error>> {
-    let reader = CdDevice::open(r"\\.\E:")?;
+    let reader = CdReader::open(r"\\.\E:")?;
     let toc = reader.read_toc()?;
     println!("{:#?}", toc);
 
@@ -22,21 +22,15 @@ fn read_cd() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(target_os = "macos")]
 fn read_cd() -> Result<(), Box<dyn std::error::Error>> {
-    let disk = "disk4";
-    mac_start_da_guard(disk);
-    let toc = mac_read_toc(disk)?;
+    let reader = CdReader::open("disk6")?;
+    let toc = reader.read_toc()?;
     println!("{:#?}", toc);
 
-    // otherwise the device might not be available yet
-    std::thread::sleep(std::time::Duration::new(3, 0));
-
-    let data = mac_read_track(disk, &toc, 6)?;
+    let data = reader.read_track(&toc, 6)?;
 
     let mut header = create_wav_header(data.len() as u32);
     header.extend_from_slice(&data);
     std::fs::write("myfile.wav", header)?;
-
-    mac_stop_da_guard();
 
     Ok(())
 }

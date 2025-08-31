@@ -1,6 +1,11 @@
+#[cfg(target_os = "macos")]
 mod macos;
-mod parse_toc;
+#[cfg(target_os = "windows")]
 mod windows;
+
+mod parse_toc;
+
+#[cfg(target_os = "windows")]
 mod windows_read_track;
 
 #[derive(Debug)]
@@ -18,5 +23,73 @@ pub struct Toc {
     pub tracks: Vec<Track>,
 }
 
-pub use macos::{mac_read_toc, mac_read_track, mac_start_da_guard, mac_stop_da_guard};
-pub use windows::CdDevice;
+pub struct CdReader {}
+
+impl CdReader {
+    pub fn open(path: &str) -> std::io::Result<Self> {
+        #[cfg(target_os = "windows")]
+        {
+            windows::open_drive(path)?;
+            Ok(Self {})
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            macos::open_drive(path)?;
+            Ok(Self {})
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+        {
+            compile_error!("Unsupported platform")
+        }
+    }
+
+    pub fn read_toc(&self) -> Result<Toc, std::io::Error> {
+        #[cfg(target_os = "windows")]
+        {
+            windows::read_toc()
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            macos::read_toc()
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+        {
+            compile_error!("Unsupported platform")
+        }
+    }
+
+    pub fn read_track(&self, toc: &Toc, track_no: u8) -> std::io::Result<Vec<u8>> {
+        #[cfg(target_os = "windows")]
+        {
+            windows::read_track(toc, track_no)
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            macos::read_track(toc, track_no)
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+        {
+            compile_error!("Unsupported platform")
+        }
+    }
+}
+
+impl Drop for CdReader {
+    fn drop(&mut self) {
+        #[cfg(target_os = "windows")]
+        {
+            windows::close_drive();
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            macos::close_drive();
+        }
+    }
+}
