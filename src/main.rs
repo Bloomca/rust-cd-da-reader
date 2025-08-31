@@ -36,8 +36,17 @@ fn read_cd() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[cfg(target_os = "linux")]
-fn read_cd() {
-    println!("CD reading not implemented for Linux yet");
+fn read_cd() -> Result<(), Box<dyn std::error::Error>> {
+    let reader = CdReader::open("/dev/sr0")?;
+    let toc = reader.read_toc()?;
+    println!("{:#?}", toc);
+
+    let data = reader.read_track(&toc, 6)?;
+
+    let mut header = create_wav_header(data.len() as u32);
+    header.extend_from_slice(&data);
+    std::fs::write("myfile.wav", header)?;
+
     Ok(())
 }
 
