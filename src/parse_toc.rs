@@ -18,6 +18,8 @@ pub fn parse_toc(data: Vec<u8>) -> std::io::Result<Toc> {
     let mut tracks = vec![];
     let mut offset = 4;
 
+    let mut lead_out_lba: Option<u32> = None;
+
     while offset + 8 <= data.len() && offset < toc_length + 2 {
         let track_num = data[offset + 2];
         let control = data[offset + 1];
@@ -32,7 +34,6 @@ pub fn parse_toc(data: Vec<u8>) -> std::io::Result<Toc> {
 
         let msf = lba_to_msf(lba);
 
-        // Skip lead-out track (0xAA) for now
         if track_num != 0xAA {
             tracks.push(Track {
                 number: track_num,
@@ -40,16 +41,23 @@ pub fn parse_toc(data: Vec<u8>) -> std::io::Result<Toc> {
                 start_msf: msf,
                 is_audio: (control & 0x04) == 0,
             });
+        } else {
+            lead_out_lba = Some(lba);
         }
         
         offset += 8;
     }
 
-    Ok(Toc {
-        first_track,
-        last_track,
-        tracks,
-    })
+    if let Some(leadout) = lead_out_lba {
+        Ok(Toc {
+            first_track,
+            last_track,
+            tracks,
+            leadout_lba: leadout
+        })
+    } else {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Didn't find 0xAA"));
+    }
 }
 
 

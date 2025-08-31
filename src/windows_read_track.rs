@@ -10,34 +10,10 @@ use windows_sys::Win32::System::IO::DeviceIoControl;
 
 use crate::Toc;
 use crate::windows::SptdWithSense;
+use crate::utils::get_track_bounds;
 
 pub fn read_track(handle: HANDLE, toc: &Toc, track_no: u8) -> std::io::Result<Vec<u8>> {
-    let idx = toc
-        .tracks
-        .iter()
-        .position(|t| t.number == track_no)
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "track not in TOC"))?;
-
-    let start_lba = toc.tracks[idx].start_lba as u32;
-
-    // Determine end LBA (next track start, or lead-out for the last track)
-    let end_lba: u32 = if (idx + 1) < toc.tracks.len() {
-        toc.tracks[idx + 1].start_lba as u32
-    } else {
-        // read_leadout_lba(handle)?
-        return Err(std::io::Error::other(
-            "Last track is not supported right now",
-        ));
-    };
-
-    if end_lba <= start_lba {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "bad TOC bounds",
-        ));
-    }
-
-    let sectors = end_lba - start_lba;
+    let (start_lba, sectors) = get_track_bounds(toc, track_no)?;
     read_cd_audio_range(handle, start_lba, sectors)
 }
 
