@@ -2,6 +2,7 @@ use std::{ffi::CString, ptr, slice};
 
 use crate::Toc;
 use crate::parse_toc::parse_toc;
+use crate::utils::get_track_bounds;
 
 #[link(name = "macos_cd_shim", kind = "static")]
 unsafe extern "C" {
@@ -58,32 +59,7 @@ pub fn read_track(toc: &Toc, track_no: u8) -> std::io::Result<Vec<u8>> {
     let mut buf: *mut u8 = ptr::null_mut();
     let mut len: u32 = 0;
 
-    let idx = toc
-        .tracks
-        .iter()
-        .position(|t| t.number == track_no)
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "track not in TOC"))?;
-
-    let start_lba = toc.tracks[idx].start_lba as u32;
-
-    // Determine end LBA (next track start, or lead-out for the last track)
-    let end_lba: u32 = if (idx + 1) < toc.tracks.len() {
-        toc.tracks[idx + 1].start_lba as u32
-    } else {
-        // read_leadout_lba(handle)?
-        return Err(std::io::Error::other(
-            "Last track is not supported right now",
-        ));
-    };
-
-    if end_lba <= start_lba {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "bad TOC bounds",
-        ));
-    }
-
-    let sectors = end_lba - start_lba;
+    let (start_lba, sectors) = get_track_bounds(toc, track_no)?;
     let ok = unsafe { read_cd_audio(start_lba, sectors, &mut buf, &mut len) };
 
     if !ok {

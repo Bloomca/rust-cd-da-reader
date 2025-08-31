@@ -5,6 +5,8 @@ mod windows;
 #[cfg(target_os = "linux")]
 mod linux;
 
+mod utils;
+
 mod parse_toc;
 
 #[cfg(target_os = "windows")]
@@ -23,6 +25,8 @@ pub struct Toc {
     pub first_track: u8,
     pub last_track: u8,
     pub tracks: Vec<Track>,
+    // used to calculate number of sectors for the last track
+    leadout_lba: u32,
 }
 
 pub struct CdReader {}

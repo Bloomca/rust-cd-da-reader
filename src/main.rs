@@ -11,7 +11,7 @@ fn read_cd() -> Result<(), Box<dyn std::error::Error>> {
     let toc = reader.read_toc()?;
     println!("{:#?}", toc);
 
-    let data = reader.read_track(&toc, 6)?;
+    let data = reader.read_track(&toc, 11)?;
 
     let mut header = create_wav_header(data.len() as u32);
     header.extend_from_slice(&data);
