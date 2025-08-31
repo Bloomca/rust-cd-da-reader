@@ -1,4 +1,4 @@
-use cd_da_reader::{CdDevice, mac_read_toc, mac_read_track, mac_start_da_guard, mac_stop_da_guard};
+use cd_da_reader::{CdReader};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     read_cd()?;
@@ -7,7 +7,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(target_os = "windows")]
 fn read_cd() -> Result<(), Box<dyn std::error::Error>> {
-    let reader = CdDevice::open(r"\\.\E:")?;
+    let reader = CdReader::open(r"\\.\E:")?;
     let toc = reader.read_toc()?;
     println!("{:#?}", toc);
 
