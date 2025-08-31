@@ -149,18 +149,12 @@ pub fn read_toc() -> Result<Toc> {
             let asc = sense[12]; // Additional Sense Code
             let ascq = sense[13]; // Additional Sense Code Qualifier
 
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!(
-                    "SCSI error: {} (status=0x{:02x}, sense_key=0x{:x}, asc=0x{:02x}, ascq=0x{:02x})",
-                    error_msg, hdr.status, sense_key, asc, ascq
-                ),
-            ));
+            return Err(Error::other(format!(
+                "SCSI error: {} (status=0x{:02x}, sense_key=0x{:x}, asc=0x{:02x}, ascq=0x{:02x})",
+                error_msg, hdr.status, sense_key, asc, ascq
+            )));
         } else {
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!("SCSI error: {}", error_msg),
-            ));
+            return Err(Error::other(format!("SCSI error: {}", error_msg)));
         }
     }
 
@@ -268,13 +262,10 @@ fn read_cd_audio_range(start_lba: u32, sectors: u32) -> std::io::Result<Vec<u8>>
                 let asc = sense[12]; // Additional Sense Code
                 let ascq = sense[13]; // Additional Sense Code Qualifier
 
-                return Err(Error::new(
-                    ErrorKind::Other,
-                    format!(
-                        "SCSI error: {} (status=0x{:02x}, sense_key=0x{:x}, asc=0x{:02x}, ascq=0x{:02x})",
-                        error_msg, hdr.status, sense_key, asc, ascq
-                    ),
-                ));
+                return Err(Error::other(format!(
+                    "SCSI error: {} (status=0x{:02x}, sense_key=0x{:x}, asc=0x{:02x}, ascq=0x{:02x})",
+                    error_msg, hdr.status, sense_key, asc, ascq
+                )));
             } else {
                 return Err(Error::other(ErrorKind::Other));
             }
