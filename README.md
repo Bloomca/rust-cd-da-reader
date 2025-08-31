@@ -1,7 +1,7 @@
 ## Rust CD-DA reader
 
-This is a library to read audio CDs. This is intended to be a fairly low-level library, it intends to read TOC and allow to read raw PCM tracks data (with a simple RIFF header you can save it as a `.wav` file and play using any standard OS player), but not to provide any encoders to MP3, Vorbis, FLAC, etc -- if you need that, you'd need to compose this library with some others.
+This is a library to read audio CDs. This is intended to be a fairly low-level library, it intends to read TOC and allow to read raw PCM tracks data (there is a [simple helper](https://docs.rs/cd-da-reader/0.1.0/cd_da_reader/struct.CdReader.html#method.create_wav) to prepend RIFF header to convert raw data to a wav file), but not to provide any encoders to MP3, Vorbis, FLAC, etc -- if you need that, you'd need to compose this library with some others.
 
-It is intended to work on Linux, macOS and Windows (I don't have BSD, so that one likely won't work). Currently it works on Windows on macOS, but I plan to add Linux support as well.
+It works on Windows, macOS and Linux, although each platform has slightly different behaviour regarding the handle exclusivity. Specifically, on macOS, it will not work if you use the audio CD somewhere -- the library will attempt to unmount it, claim exclusive access and only after read the data from it. After it is done, it will remount the CD back so other apps can use, which will cause the OS to treat as if you just inserted the CD.
 
-It is not published as a crate yet, but you can run it using `cargo run` on Windows and macOS; you'd need to adjust the CDROM drive first in `main.rs` file. On Windows, simply look in your File Explorer, and on macOS, execute `diskutil list` and find the drive with `Audio CD` name.
+There is an example to read TOC and save a track ([ref](./examples/read_track.rs)); the example is cross-platform, but you'll likely need to adjust the drive letter. On Windows, simply look in your File Explorer; on macOS, execute `diskutil list` and find the drive with `Audio CD` name; on Linux, call `cat /proc/sys/dev/cdrom/info`.
