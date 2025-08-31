@@ -28,6 +28,31 @@ pub fn get_track_bounds(toc: &Toc, track_no: u8) -> std::io::Result<(u32, u32)> 
     Ok((start_lba, sectors))
 }
 
+pub fn create_wav_header(pcm_data_size: u32) -> Vec<u8> {
+    let mut header = Vec::with_capacity(44);
+
+    // RIFF header
+    header.extend_from_slice(b"RIFF");
+    header.extend_from_slice(&(pcm_data_size + 36).to_le_bytes()); // file size - 8
+    header.extend_from_slice(b"WAVE");
+
+    // fmt chunk
+    header.extend_from_slice(b"fmt ");
+    header.extend_from_slice(&16u32.to_le_bytes()); // fmt chunk size
+    header.extend_from_slice(&1u16.to_le_bytes()); // PCM format
+    header.extend_from_slice(&2u16.to_le_bytes()); // channels
+    header.extend_from_slice(&44100u32.to_le_bytes()); // sample rate
+    header.extend_from_slice(&176400u32.to_le_bytes()); // byte rate
+    header.extend_from_slice(&4u16.to_le_bytes()); // block align
+    header.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+
+    // data chunk header
+    header.extend_from_slice(b"data");
+    header.extend_from_slice(&pcm_data_size.to_le_bytes());
+
+    header
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
