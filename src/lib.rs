@@ -26,36 +26,54 @@ pub struct Toc {
 pub struct CdReader {}
 
 impl CdReader {
-    pub fn open(path: &str) -> std::io::Result<Self>  {
-        #[cfg(target_os="windows")] {
+    pub fn open(path: &str) -> std::io::Result<Self> {
+        #[cfg(target_os = "windows")]
+        {
             windows::open_drive(path)?;
             Ok(Self {})
         }
 
-        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os="macos")))]
+        #[cfg(target_os = "macos")]
+        {
+            macos::open_drive(path)?;
+            Ok(Self {})
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
         {
             compile_error!("Unsupported platform")
         }
     }
 
     pub fn read_toc(&self) -> Result<Toc, std::io::Error> {
-        #[cfg(target_os="windows")]
+        #[cfg(target_os = "windows")]
         {
             windows::read_toc()
         }
 
-        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os="macos")))]
+        #[cfg(target_os = "macos")]
+        {
+            macos::read_toc()
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
         {
             compile_error!("Unsupported platform")
         }
     }
 
     pub fn read_track(&self, toc: &Toc, track_no: u8) -> std::io::Result<Vec<u8>> {
-        #[cfg(target_os="windows")] {
+        #[cfg(target_os = "windows")]
+        {
             windows::read_track(toc, track_no)
         }
 
-        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os="macos")))]
+        #[cfg(target_os = "macos")]
+        {
+            macos::read_track(toc, track_no)
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
         {
             compile_error!("Unsupported platform")
         }
@@ -64,8 +82,14 @@ impl CdReader {
 
 impl Drop for CdReader {
     fn drop(&mut self) {
-        #[cfg(target_os="windows")] {
+        #[cfg(target_os = "windows")]
+        {
             windows::close_drive();
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            macos::close_drive();
         }
     }
 }

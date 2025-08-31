@@ -91,11 +91,10 @@ void stop_da_guard() {
     CFRelease(g_session);
 }
 
-static io_service_t find_media(const char *bsd);
-static Boolean read_toc(const char *bsd, uint8_t **outBuf, uint32_t *outLen);
+static Boolean read_toc(uint8_t **outBuf, uint32_t *outLen);
 
-bool cd_read_toc(const char *bsdName, uint8_t **outBuf, uint32_t *outLen) {
-    Boolean ok = read_toc(bsdName, outBuf, outLen);
+bool cd_read_toc(uint8_t **outBuf, uint32_t *outLen) {
+    Boolean ok = read_toc(outBuf, outLen);
     return ok;
 }
 
@@ -190,51 +189,6 @@ static io_service_t find_media(const char *bsdName) {
     return svc;
 }
 
-static io_service_t find_mmc_device_for_bsd(const char *bsdName) {
-    io_service_t media = find_media(bsdName);
-    if (!media) {
-        fprintf(stderr, "[MMC] no media for %s\n", bsdName);
-        return IO_OBJECT_NULL;
-    }
-
-    io_service_t node = media;
-    IOObjectRetain(node); // we will return this if it matches
-
-    for (int depth = 0; node && depth < 32; depth++) {
-        io_name_t cls = {0};
-        if (IOObjectGetClass(node, cls) != KERN_SUCCESS) {
-            fprintf(stderr, "[MMC] IOObjectGetClass failed at depth %d\n", depth);
-            IOObjectRelease(node);
-            IOObjectRelease(media);
-            return IO_OBJECT_NULL;
-        }
-        fprintf(stderr, "[MMC] depth %d: %s\n", depth, cls);
-
-        if (IOObjectConformsTo(node, "IOSCSIMultimediaCommandsDevice")) {
-            fprintf(stderr, "[MMC] Found node which conforms to IOSCSIMultimediaCommandsDevice\n");
-            // Found the device that vends the MMC/SCSI user client
-            IOObjectRelease(media);    // drop original media
-            return node;               // still has +1 retain
-        }
-
-        io_registry_entry_t parent = MACH_PORT_NULL;
-        kern_return_t kr = IORegistryEntryGetParentEntry(node, kIOServicePlane, &parent);
-        IOObjectRelease(node); // done with the current node either way
-
-        if (kr != KERN_SUCCESS || parent == IO_OBJECT_NULL) {
-            fprintf(stderr, "[MMC] Hit the root or error\n");
-            // hit the root or error
-            node = IO_OBJECT_NULL;
-            break;
-        }
-
-        node = (io_service_t)parent; // parent comes retained
-    }
-
-    IOObjectRelease(media);
-    return IO_OBJECT_NULL;
-}
-
 static bool service_has_uc(io_service_t svc, CFUUIDRef userClientType) {
     CFDictionaryRef d = IORegistryEntryCreateCFProperty(
         svc, CFSTR("IOCFPlugInTypes"), kCFAllocatorDefault, 0);
@@ -260,8 +214,32 @@ static io_service_t ascend_to_uc(io_service_t start, CFUUIDRef userClientType) {
     return IO_OBJECT_NULL;
 }
 
+static io_service_t globalDevSvc = 0;
 
-static Boolean read_toc(const char *bsdName, uint8_t **outBuf, uint32_t *outLen) {
+Boolean get_dev_svc(const char *bsdName) {
+    // Do not allow to grab a drive while another one is open
+    if (globalDevSvc) {
+        return false;
+    }
+
+    io_service_t media  = find_media(bsdName);
+    io_service_t devSvc = ascend_to_uc(media, kIOMMCDeviceUserClientTypeID);
+
+    if (!devSvc) {
+        fprintf(stderr, "[TOC] Could not find mmc device for bsd\n");
+        return false;
+    } else {
+        globalDevSvc = devSvc;
+        fprintf(stderr, "[TOC] Found device successfully\n");
+        return true;
+    }
+}
+
+void reset_dev_scv() {
+    globalDevSvc = 0;
+}
+
+static Boolean read_toc(uint8_t **outBuf, uint32_t *outLen) {
     *outBuf = NULL; *outLen = 0;
 
     SInt32 score = 0;
@@ -270,8 +248,7 @@ static Boolean read_toc(const char *bsdName, uint8_t **outBuf, uint32_t *outLen)
     SCSITaskDeviceInterface **dev = NULL;
     SCSITaskInterface **task = NULL;
 
-    io_service_t media  = find_media(bsdName);
-    io_service_t devSvc = ascend_to_uc(media, kIOMMCDeviceUserClientTypeID);
+    io_service_t devSvc = globalDevSvc;
     fprintf(stderr, "[TOC] After finding device\n");
 
     if (!devSvc) {
@@ -372,11 +349,7 @@ fail:
 // - outBuf:    malloc'd buffer with 2352 * sectors bytes on success (caller frees)
 // - outLen:    length of outBuf
 // Returns true on success.
-bool read_cd_audio(const char *bsdName,
-                             uint32_t lba,
-                             uint32_t sectors,
-                             uint8_t **outBuf,
-                             uint32_t *outLen)
+bool read_cd_audio(uint32_t lba, uint32_t sectors, uint8_t **outBuf, uint32_t *outLen)
 {
     *outBuf = NULL; *outLen = 0;
 
@@ -385,8 +358,7 @@ bool read_cd_audio(const char *bsdName,
     MMCDeviceInterface  **mmc    = NULL;
     SCSITaskDeviceInterface **dev = NULL;
 
-    io_service_t media  = find_media(bsdName);
-    io_service_t devSvc = ascend_to_uc(media, kIOMMCDeviceUserClientTypeID);
+    io_service_t devSvc = globalDevSvc;
     fprintf(stderr, "[READ] After finding device\n");
 
     if (!devSvc) {
