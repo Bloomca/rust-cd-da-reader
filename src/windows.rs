@@ -22,9 +22,10 @@ pub struct SptdWithSense {
 
 static mut DRIVE_HANDLE: Option<HANDLE> = None;
 
+#[allow(static_mut_refs)]
 pub fn open_drive(path: &str) -> std::io::Result<()> {
     unsafe {
-        if let Some(_) = DRIVE_HANDLE {
+        if DRIVE_HANDLE.is_some() {
             return Err(std::io::Error::other("Drive is already open"));
         }
     }

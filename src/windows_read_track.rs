@@ -88,10 +88,7 @@ fn read_cd_audio_range(handle: HANDLE, start_lba: u32, sectors: u32) -> std::io:
         if wrapper.sptd.ScsiStatus != 0 {
             eprintln!("READ CD: SCSI status 0x{:02X}", wrapper.sptd.ScsiStatus);
             eprintln!("Sense: {:02X?}", &wrapper.sense);
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "READ CD failed (CHECK CONDITION)",
-            ));
+            return Err(std::io::Error::other("READ CD failed (CHECK CONDITION)"));
         }
 
         out.extend_from_slice(&chunk);

@@ -59,10 +59,10 @@ pub fn parse_toc(data: Vec<u8>) -> std::io::Result<Toc> {
             leadout_lba: leadout,
         })
     } else {
-        return Err(std::io::Error::new(
+        Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "Didn't find 0xAA",
-        ));
+        ))
     }
 }
 
