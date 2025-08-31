@@ -2,6 +2,8 @@
 mod macos;
 #[cfg(target_os = "windows")]
 mod windows;
+#[cfg(target_os = "linux")]
+mod linux;
 
 mod parse_toc;
 
@@ -39,6 +41,12 @@ impl CdReader {
             Ok(Self {})
         }
 
+        #[cfg(target_os = "linux")]
+        {
+            linux::open_drive(path)?;
+            Ok(Self {})
+        }
+
         #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
         {
             compile_error!("Unsupported platform")
@@ -54,6 +62,11 @@ impl CdReader {
         #[cfg(target_os = "macos")]
         {
             macos::read_toc()
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            linux::read_toc()
         }
 
         #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
@@ -73,6 +86,11 @@ impl CdReader {
             macos::read_track(toc, track_no)
         }
 
+        #[cfg(target_os = "linux")]
+        {
+            linux::read_track(toc, track_no)
+        }
+
         #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
         {
             compile_error!("Unsupported platform")
@@ -90,6 +108,11 @@ impl Drop for CdReader {
         #[cfg(target_os = "macos")]
         {
             macos::close_drive();
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            linux::close_drive();
         }
     }
 }

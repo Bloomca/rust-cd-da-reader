@@ -56,7 +56,7 @@ pub fn open_drive(path: &str) -> std::io::Result<()> {
 }
 
 pub fn close_drive() {
-     unsafe {
+    unsafe {
         if let Some(current_drive) = DRIVE_HANDLE {
             CloseHandle(current_drive);
             DRIVE_HANDLE = None;
@@ -65,10 +65,9 @@ pub fn close_drive() {
 }
 
 pub fn read_toc() -> std::io::Result<Toc> {
-    let handle = unsafe { 
-        DRIVE_HANDLE.ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::NotFound, "Drive not opened")
-        })?
+    let handle = unsafe {
+        DRIVE_HANDLE
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Drive not opened"))?
     };
 
     // Buffer that the device will fill with TOC data.
@@ -136,10 +135,9 @@ pub fn read_toc() -> std::io::Result<Toc> {
 }
 
 pub fn read_track(toc: &Toc, track_no: u8) -> std::io::Result<Vec<u8>> {
-    let handle = unsafe { 
-        DRIVE_HANDLE.ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::NotFound, "Drive not opened")
-        })?
+    let handle = unsafe {
+        DRIVE_HANDLE
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Drive not opened"))?
     };
     windows_read_track::read_track(handle, toc, track_no)
 }
