@@ -1,5 +1,5 @@
-name: pr-test-workflow
-run-name: Testing core editor functionality
+name: codebase-health-checks
+run-name: Formatting, Clippy and Tests checks
 
 on:
   push:
