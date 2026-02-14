@@ -22,6 +22,17 @@ typedef struct {
     dispatch_semaphore_t sem;
 } DAGuardCtx;
 
+typedef struct {
+    uint8_t has_scsi_error;
+    uint8_t scsi_status;
+    uint8_t has_sense;
+    uint8_t sense_key;
+    uint8_t asc;
+    uint8_t ascq;
+    uint32_t exec_error;
+    uint32_t task_status;
+} CdScsiError;
+
 extern DASessionRef g_session;
 extern DAGuardCtx g_guard;
 extern io_service_t globalDevSvc;
@@ -29,8 +40,8 @@ extern io_service_t globalDevSvc;
 void start_da_guard(const char *bsdName);
 void stop_da_guard(void);
 
-bool cd_read_toc(uint8_t **outBuf, uint32_t *outLen);
-bool read_cd_audio(uint32_t lba, uint32_t sectors, uint8_t **outBuf, uint32_t *outLen);
+bool cd_read_toc(uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr);
+bool read_cd_audio(uint32_t lba, uint32_t sectors, uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr);
 void cd_free(void *p);
 
 Boolean get_dev_svc(const char *bsdName);

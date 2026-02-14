@@ -43,7 +43,9 @@ mod macos;
 #[cfg(target_os = "windows")]
 mod windows;
 
+mod errors;
 mod utils;
+pub use errors::{CdReaderError, ScsiError, ScsiOp};
 
 mod parse_toc;
 
@@ -150,7 +152,7 @@ impl CdReader {
     /// Please note that each track in the vector has `number` property, which you should use
     /// when calling `read_track`, as it doesn't start with 0. It is important to do so,
     /// because in the future it might include 0 for the hidden track.
-    pub fn read_toc(&self) -> Result<Toc, std::io::Error> {
+    pub fn read_toc(&self) -> Result<Toc, CdReaderError> {
         #[cfg(target_os = "windows")]
         {
             windows::read_toc()
@@ -176,7 +178,7 @@ impl CdReader {
     /// It returns raw PCM data, but if you want to save it directly and make it playable,
     /// wrap the result with `create_wav` function, that will prepend a RIFF header and
     /// make it a proper music file.
-    pub fn read_track(&self, toc: &Toc, track_no: u8) -> std::io::Result<Vec<u8>> {
+    pub fn read_track(&self, toc: &Toc, track_no: u8) -> Result<Vec<u8>, CdReaderError> {
         #[cfg(target_os = "windows")]
         {
             windows::read_track(toc, track_no)

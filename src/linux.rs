@@ -2,12 +2,13 @@ use libc::{O_NONBLOCK, O_RDWR, c_uchar, c_void};
 use std::cmp::min;
 use std::ffi::CString;
 use std::fs::File;
-use std::io::{Error, Result};
+use std::io::Error;
 use std::os::fd::{AsRawFd, FromRawFd};
 
 use crate::Toc;
 use crate::parse_toc::parse_toc;
 use crate::utils::get_track_bounds;
+use crate::{CdReaderError, ScsiError, ScsiOp};
 
 const SG_INFO_CHECK: u32 = 0x1;
 const SG_DXFER_FROM_DEV: i32 = -3;
@@ -44,7 +45,7 @@ const SG_IO: u64 = 0x2285;
 
 static mut DRIVE_HANDLE: Option<File> = None;
 
-pub fn open_drive(path: &str) -> Result<()> {
+pub fn open_drive(path: &str) -> std::io::Result<()> {
     let c = CString::new(path).unwrap();
     let fd = unsafe { libc::open(c.as_ptr(), O_RDWR | O_NONBLOCK) };
     if fd < 0 {
@@ -70,7 +71,7 @@ pub fn close_drive() {
 }
 
 #[allow(static_mut_refs)]
-unsafe fn ioctl_sg_io(hdr: &mut SgIoHeader) -> Result<()> {
+unsafe fn ioctl_sg_io(hdr: &mut SgIoHeader) -> std::io::Result<()> {
     let fd = unsafe {
         DRIVE_HANDLE
             .as_ref()
@@ -86,7 +87,7 @@ unsafe fn ioctl_sg_io(hdr: &mut SgIoHeader) -> Result<()> {
     Ok(())
 }
 
-pub fn read_toc() -> Result<Toc> {
+pub fn read_toc() -> std::result::Result<Toc, CdReaderError> {
     let alloc_len: usize = 2048;
     let mut data = vec![0u8; alloc_len];
     let mut sense = vec![0u8; 32];
@@ -124,38 +125,34 @@ pub fn read_toc() -> Result<Toc> {
         info: 0,
     };
 
-    unsafe { ioctl_sg_io(&mut hdr)? };
+    unsafe { ioctl_sg_io(&mut hdr).map_err(CdReaderError::Io)? };
 
     // Check if the ioctl itself succeeded
     if hdr.info & SG_INFO_CHECK != 0 {
-        return Err(Error::other("SG_IO check failed"));
+        let (sense_key, asc, ascq) = parse_sense(&sense, hdr.sb_len_wr);
+        return Err(CdReaderError::Scsi(ScsiError {
+            op: ScsiOp::ReadToc,
+            lba: None,
+            sectors: None,
+            scsi_status: hdr.status,
+            sense_key,
+            asc,
+            ascq,
+        }));
     }
 
     // Check SCSI status
     if hdr.status != 0 {
-        let error_msg = match hdr.status {
-            0x02 => "Check Condition",
-            0x08 => "Busy",
-            0x18 => "Reservation Conflict",
-            0x28 => "Task Set Full",
-            0x30 => "ACA Active",
-            0x40 => "Task Aborted",
-            _ => "Unknown SCSI error",
-        };
-
-        // If there's sense data, parse it for more details
-        if hdr.sb_len_wr > 0 {
-            let sense_key = sense[2] & 0x0F;
-            let asc = sense[12]; // Additional Sense Code
-            let ascq = sense[13]; // Additional Sense Code Qualifier
-
-            return Err(Error::other(format!(
-                "SCSI error: {} (status=0x{:02x}, sense_key=0x{:x}, asc=0x{:02x}, ascq=0x{:02x})",
-                error_msg, hdr.status, sense_key, asc, ascq
-            )));
-        } else {
-            return Err(Error::other(format!("SCSI error: {}", error_msg)));
-        }
+        let (sense_key, asc, ascq) = parse_sense(&sense, hdr.sb_len_wr);
+        return Err(CdReaderError::Scsi(ScsiError {
+            op: ScsiOp::ReadToc,
+            lba: None,
+            sectors: None,
+            scsi_status: hdr.status,
+            sense_key,
+            asc,
+            ascq,
+        }));
     }
 
     // Trim actual length if driver reported residual
@@ -166,16 +163,19 @@ pub fn read_toc() -> Result<Toc> {
         }
     }
 
-    parse_toc(data)
+    parse_toc(data).map_err(|err| CdReaderError::Parse(err.to_string()))
 }
 
-pub fn read_track(toc: &Toc, track_no: u8) -> std::io::Result<Vec<u8>> {
-    let (start_lba, sectors) = get_track_bounds(toc, track_no)?;
+pub fn read_track(toc: &Toc, track_no: u8) -> std::result::Result<Vec<u8>, CdReaderError> {
+    let (start_lba, sectors) = get_track_bounds(toc, track_no).map_err(CdReaderError::Io)?;
     read_cd_audio_range(start_lba, sectors)
 }
 
 // --- READ CD (0xBE): read an arbitrary LBA range as CD-DA (2352 bytes/sector) ---
-fn read_cd_audio_range(start_lba: u32, sectors: u32) -> std::io::Result<Vec<u8>> {
+fn read_cd_audio_range(
+    start_lba: u32,
+    sectors: u32,
+) -> std::result::Result<Vec<u8>, CdReaderError> {
     // SCSI-2 defines reading data in 2352 bytes chunks
     const SECTOR_BYTES: usize = 2352;
 
@@ -239,36 +239,32 @@ fn read_cd_audio_range(start_lba: u32, sectors: u32) -> std::io::Result<Vec<u8>>
             info: 0,
         };
 
-        unsafe { ioctl_sg_io(&mut hdr)? };
+        unsafe { ioctl_sg_io(&mut hdr).map_err(CdReaderError::Io)? };
 
         if hdr.info & SG_INFO_CHECK != 0 {
-            return Err(std::io::Error::last_os_error());
+            let (sense_key, asc, ascq) = parse_sense(&sense, hdr.sb_len_wr);
+            return Err(CdReaderError::Scsi(ScsiError {
+                op: ScsiOp::ReadCd,
+                lba: Some(lba),
+                sectors: Some(this_sectors),
+                scsi_status: hdr.status,
+                sense_key,
+                asc,
+                ascq,
+            }));
         }
 
         if hdr.status != 0 {
-            let error_msg = match hdr.status {
-                0x02 => "Check Condition",
-                0x08 => "Busy",
-                0x18 => "Reservation Conflict",
-                0x28 => "Task Set Full",
-                0x30 => "ACA Active",
-                0x40 => "Task Aborted",
-                _ => "Unknown SCSI error",
-            };
-
-            // If there's sense data, parse it for more details
-            if hdr.sb_len_wr > 0 {
-                let sense_key = sense[2] & 0x0F;
-                let asc = sense[12]; // Additional Sense Code
-                let ascq = sense[13]; // Additional Sense Code Qualifier
-
-                return Err(Error::other(format!(
-                    "SCSI error: {} (status=0x{:02x}, sense_key=0x{:x}, asc=0x{:02x}, ascq=0x{:02x})",
-                    error_msg, hdr.status, sense_key, asc, ascq
-                )));
-            } else {
-                return Err(Error::other(format!("SCSI error: {}", error_msg)));
-            }
+            let (sense_key, asc, ascq) = parse_sense(&sense, hdr.sb_len_wr);
+            return Err(CdReaderError::Scsi(ScsiError {
+                op: ScsiOp::ReadCd,
+                lba: Some(lba),
+                sectors: Some(this_sectors),
+                scsi_status: hdr.status,
+                sense_key,
+                asc,
+                ascq,
+            }));
         }
 
         if hdr.resid > 0 {
@@ -283,4 +279,15 @@ fn read_cd_audio_range(start_lba: u32, sectors: u32) -> std::io::Result<Vec<u8>>
     }
 
     Ok(out)
+}
+
+fn parse_sense(sense: &[u8], sb_len_wr: u8) -> (Option<u8>, Option<u8>, Option<u8>) {
+    if sb_len_wr == 0 || sense.len() < 14 {
+        return (None, None, None);
+    }
+
+    let sense_key = Some(sense[2] & 0x0F);
+    let asc = Some(sense[12]);
+    let ascq = Some(sense[13]);
+    (sense_key, asc, ascq)
 }

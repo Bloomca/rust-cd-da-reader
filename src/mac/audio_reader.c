@@ -1,8 +1,49 @@
 #include "shim_common.h"
 
-bool read_cd_audio(uint32_t lba, uint32_t sectors, uint8_t **outBuf, uint32_t *outLen) {
+static uint8_t task_status_to_scsi_status(SCSITaskStatus status) {
+    switch (status) {
+        case kSCSITaskStatus_GOOD: return 0x00;
+        case kSCSITaskStatus_CHECK_CONDITION: return 0x02;
+        case kSCSITaskStatus_BUSY: return 0x08;
+        case kSCSITaskStatus_RESERVATION_CONFLICT: return 0x18;
+        case kSCSITaskStatus_TASK_SET_FULL: return 0x28;
+        case kSCSITaskStatus_ACA_ACTIVE: return 0x30;
+        case kSCSITaskStatus_TASK_ABORTED: return 0x40;
+        default: return 0xFF;
+    }
+}
+
+static void fill_scsi_error(CdScsiError *outErr, kern_return_t ex, SCSITaskStatus status, SCSI_Sense_Data *sense) {
+    if (!outErr) return;
+
+    outErr->has_scsi_error = 1;
+    outErr->exec_error = (uint32_t)ex;
+    outErr->task_status = (uint32_t)status;
+    outErr->scsi_status = task_status_to_scsi_status(status);
+
+    const uint8_t *sense_bytes = (const uint8_t *)sense;
+    bool has_sense = false;
+    for (size_t i = 0; i < sizeof(SCSI_Sense_Data); i++) {
+        if (sense_bytes[i] != 0) {
+            has_sense = true;
+            break;
+        }
+    }
+
+    outErr->has_sense = has_sense ? 1 : 0;
+    if (has_sense && sizeof(SCSI_Sense_Data) >= 14) {
+        outErr->sense_key = sense_bytes[2] & 0x0F;
+        outErr->asc = sense_bytes[12];
+        outErr->ascq = sense_bytes[13];
+    }
+}
+
+bool read_cd_audio(uint32_t lba, uint32_t sectors, uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr) {
     *outBuf = NULL;
     *outLen = 0;
+    if (outErr) {
+        memset(outErr, 0, sizeof(CdScsiError));
+    }
 
     SInt32 score = 0;
     IOCFPlugInInterface **plugin = NULL;
@@ -10,20 +51,38 @@ bool read_cd_audio(uint32_t lba, uint32_t sectors, uint8_t **outBuf, uint32_t *o
     SCSITaskDeviceInterface **dev = NULL;
 
     io_service_t devSvc = globalDevSvc;
+    if (!devSvc && g_guard.bsdName) {
+        (void)get_dev_svc(g_guard.bsdName);
+        devSvc = globalDevSvc;
+    }
     if (!devSvc) {
         fprintf(stderr, "[READ] Could not find mmc device for bsd\n");
         goto fail;
     }
 
-    kern_return_t kret = IOCreatePlugInInterfaceForService(
-        devSvc,
-        kIOMMCDeviceUserClientTypeID,
-        kIOCFPlugInInterfaceID,
-        &plugin,
-        &score
-    );
-    if (kret != kIOReturnSuccess || plugin == NULL) {
+    kern_return_t kret = kIOReturnError;
+    for (int attempt = 0; attempt < 2; attempt++) {
+        score = 0;
+        plugin = NULL;
+        kret = IOCreatePlugInInterfaceForService(
+            devSvc,
+            kIOMMCDeviceUserClientTypeID,
+            kIOCFPlugInInterfaceID,
+            &plugin,
+            &score
+        );
+        if (kret == kIOReturnSuccess && plugin != NULL) break;
+
         fprintf(stderr, "[READ] IOCreatePlugInInterfaceForService failed: 0x%x\n", kret);
+        if (attempt == 0 && g_guard.bsdName) {
+            reset_dev_scv();
+            (void)get_dev_svc(g_guard.bsdName);
+            devSvc = globalDevSvc;
+            if (!devSvc) break;
+            continue;
+        }
+    }
+    if (kret != kIOReturnSuccess || plugin == NULL) {
         goto fail;
     }
 
@@ -130,6 +189,7 @@ bool read_cd_audio(uint32_t lba, uint32_t sectors, uint8_t **outBuf, uint32_t *o
         (*task)->Release(task);
 
         if (ex != kIOReturnSuccess || status != kSCSITaskStatus_GOOD) {
+            fill_scsi_error(outErr, ex, status, &sense);
             fprintf(stderr, "[READ] ExecuteTaskSync failed (ex=0x%x, status=%u)\n", ex, status);
             free(dst);
             goto fail_excl;

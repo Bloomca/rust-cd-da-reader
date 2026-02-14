@@ -38,7 +38,11 @@ void start_da_guard(const char *bsdName) {
 
     DASessionScheduleWithRunLoop(g_session, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
 
-    g_guard.bsdName = bsdName;
+    if (g_guard.bsdName) {
+        free((void *)g_guard.bsdName);
+        g_guard.bsdName = NULL;
+    }
+    g_guard.bsdName = strdup(bsdName);
     g_guard.sem = dispatch_semaphore_create(0);
 
     // Veto remounts while we run.
@@ -72,4 +76,9 @@ void stop_da_guard(void) {
     DASessionUnscheduleFromRunLoop(g_session, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
     CFRelease(g_session);
     g_session = NULL;
+
+    if (g_guard.bsdName) {
+        free((void *)g_guard.bsdName);
+        g_guard.bsdName = NULL;
+    }
 }
