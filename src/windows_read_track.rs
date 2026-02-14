@@ -8,17 +8,21 @@ use windows_sys::Win32::Storage::IscsiDisc::{
 };
 use windows_sys::Win32::System::IO::DeviceIoControl;
 
-use crate::Toc;
 use crate::utils::get_track_bounds;
 use crate::windows::SptdWithSense;
+use crate::{CdReaderError, ScsiError, ScsiOp, Toc};
 
-pub fn read_track(handle: HANDLE, toc: &Toc, track_no: u8) -> std::io::Result<Vec<u8>> {
-    let (start_lba, sectors) = get_track_bounds(toc, track_no)?;
+pub fn read_track(handle: HANDLE, toc: &Toc, track_no: u8) -> Result<Vec<u8>, CdReaderError> {
+    let (start_lba, sectors) = get_track_bounds(toc, track_no).map_err(CdReaderError::Io)?;
     read_cd_audio_range(handle, start_lba, sectors)
 }
 
 // --- READ CD (0xBE): read an arbitrary LBA range as CD-DA (2352 bytes/sector) ---
-fn read_cd_audio_range(handle: HANDLE, start_lba: u32, sectors: u32) -> std::io::Result<Vec<u8>> {
+fn read_cd_audio_range(
+    handle: HANDLE,
+    start_lba: u32,
+    sectors: u32,
+) -> Result<Vec<u8>, CdReaderError> {
     // SCSI-2 defines reading data in 2352 bytes chunks
     const SECTOR_BYTES: usize = 2352;
 
@@ -83,12 +87,19 @@ fn read_cd_audio_range(handle: HANDLE, start_lba: u32, sectors: u32) -> std::io:
         };
 
         if ok == 0 {
-            return Err(std::io::Error::last_os_error());
+            return Err(CdReaderError::Io(std::io::Error::last_os_error()));
         }
         if wrapper.sptd.ScsiStatus != 0 {
-            eprintln!("READ CD: SCSI status 0x{:02X}", wrapper.sptd.ScsiStatus);
-            eprintln!("Sense: {:02X?}", &wrapper.sense);
-            return Err(std::io::Error::other("READ CD failed (CHECK CONDITION)"));
+            let (sense_key, asc, ascq) = parse_sense(&wrapper.sense, wrapper.sptd.SenseInfoLength);
+            return Err(CdReaderError::Scsi(ScsiError {
+                op: ScsiOp::ReadCd,
+                lba: Some(lba),
+                sectors: Some(this_sectors),
+                scsi_status: wrapper.sptd.ScsiStatus,
+                sense_key,
+                asc,
+                ascq,
+            }));
         }
 
         out.extend_from_slice(&chunk);
@@ -98,4 +109,12 @@ fn read_cd_audio_range(handle: HANDLE, start_lba: u32, sectors: u32) -> std::io:
     }
 
     Ok(out)
+}
+
+fn parse_sense(sense: &[u8], sense_len: u8) -> (Option<u8>, Option<u8>, Option<u8>) {
+    if sense_len < 14 || sense.len() < 14 {
+        return (None, None, None);
+    }
+
+    (Some(sense[2] & 0x0F), Some(sense[12]), Some(sense[13]))
 }

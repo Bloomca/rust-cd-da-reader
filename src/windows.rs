@@ -9,7 +9,7 @@ use windows_sys::Win32::Storage::IscsiDisc::{
 };
 use windows_sys::Win32::System::IO::DeviceIoControl;
 
-use crate::{Toc, parse_toc, windows_read_track};
+use crate::{CdReaderError, ScsiError, ScsiOp, Toc, parse_toc, windows_read_track};
 
 use std::mem;
 use std::ptr;
@@ -65,10 +65,11 @@ pub fn close_drive() {
     }
 }
 
-pub fn read_toc() -> std::io::Result<Toc> {
+pub fn read_toc() -> Result<Toc, CdReaderError> {
     let handle = unsafe {
         DRIVE_HANDLE
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Drive not opened"))?
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Drive not opened"))
+            .map_err(CdReaderError::Io)?
     };
 
     // Buffer that the device will fill with TOC data.
@@ -120,25 +121,36 @@ pub fn read_toc() -> std::io::Result<Toc> {
     };
 
     if ok == 0 {
-        return Err(std::io::Error::last_os_error());
+        return Err(CdReaderError::Io(std::io::Error::last_os_error()));
     } else if wrapper.sptd.ScsiStatus != 0 {
-        eprintln!("SCSI status: 0x{:02X}", wrapper.sptd.ScsiStatus);
-        eprintln!(
-            "Sense ({} bytes): {:02X?}",
-            wrapper.sense.len(),
-            &wrapper.sense
-        );
-
-        return Err(std::io::Error::last_os_error());
+        let (sense_key, asc, ascq) = parse_sense(&wrapper.sense, wrapper.sptd.SenseInfoLength);
+        return Err(CdReaderError::Scsi(ScsiError {
+            op: ScsiOp::ReadToc,
+            lba: None,
+            sectors: None,
+            scsi_status: wrapper.sptd.ScsiStatus,
+            sense_key,
+            asc,
+            ascq,
+        }));
     }
 
-    parse_toc::parse_toc(data)
+    parse_toc::parse_toc(data).map_err(|err| CdReaderError::Parse(err.to_string()))
 }
 
-pub fn read_track(toc: &Toc, track_no: u8) -> std::io::Result<Vec<u8>> {
+pub fn read_track(toc: &Toc, track_no: u8) -> Result<Vec<u8>, CdReaderError> {
     let handle = unsafe {
         DRIVE_HANDLE
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Drive not opened"))?
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Drive not opened"))
+            .map_err(CdReaderError::Io)?
     };
     windows_read_track::read_track(handle, toc, track_no)
+}
+
+fn parse_sense(sense: &[u8], sense_len: u8) -> (Option<u8>, Option<u8>, Option<u8>) {
+    if sense_len < 14 || sense.len() < 14 {
+        return (None, None, None);
+    }
+
+    (Some(sense[2] & 0x0F), Some(sense[12]), Some(sense[13]))
 }
