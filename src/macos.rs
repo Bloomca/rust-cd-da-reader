@@ -1,8 +1,9 @@
 use std::{ffi::CString, ptr, slice};
+use std::{thread::sleep, time::Duration};
 
 use crate::parse_toc::parse_toc;
 use crate::utils::get_track_bounds;
-use crate::{CdReaderError, ScsiError, ScsiOp, Toc};
+use crate::{CdReaderError, RetryConfig, ScsiError, ScsiOp, Toc};
 
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy)]
@@ -71,21 +72,69 @@ pub fn read_toc() -> Result<Toc, CdReaderError> {
     result
 }
 
-pub fn read_track(toc: &Toc, track_no: u8) -> Result<Vec<u8>, CdReaderError> {
+pub fn read_track_with_retry(
+    toc: &Toc,
+    track_no: u8,
+    cfg: &RetryConfig,
+) -> Result<Vec<u8>, CdReaderError> {
+    const SECTOR_BYTES: usize = 2352;
+    const MAX_SECTORS_PER_XFER: u32 = 27;
+
+    let (start_lba, sectors) = get_track_bounds(toc, track_no).map_err(CdReaderError::Io)?;
+    let mut out = Vec::<u8>::with_capacity((sectors as usize) * SECTOR_BYTES);
+    let mut remaining = sectors;
+    let mut lba = start_lba;
+    let attempts_total = cfg.max_attempts.max(1);
+    let min_chunk = cfg.min_sectors_per_read.max(1);
+
+    while remaining > 0 {
+        let mut chunk_sectors = remaining.min(MAX_SECTORS_PER_XFER);
+        let mut backoff_ms = cfg.initial_backoff_ms;
+        let mut last_err: Option<CdReaderError> = None;
+
+        for attempt in 1..=attempts_total {
+            match read_cd_audio_chunk(lba, chunk_sectors) {
+                Ok(chunk) => {
+                    out.extend_from_slice(&chunk);
+                    lba += chunk_sectors;
+                    remaining -= chunk_sectors;
+                    last_err = None;
+                    break;
+                }
+                Err(err) => {
+                    last_err = Some(err);
+                    if attempt == attempts_total {
+                        break;
+                    }
+                    if cfg.reduce_chunk_on_retry && chunk_sectors > min_chunk {
+                        chunk_sectors = next_chunk_size(chunk_sectors, min_chunk);
+                    }
+                    if backoff_ms > 0 {
+                        sleep(Duration::from_millis(backoff_ms));
+                    }
+                    if cfg.max_backoff_ms > 0 {
+                        backoff_ms = (backoff_ms.saturating_mul(2)).min(cfg.max_backoff_ms);
+                    }
+                }
+            }
+        }
+
+        if let Some(err) = last_err {
+            return Err(err);
+        }
+    }
+
+    Ok(out)
+}
+
+fn read_cd_audio_chunk(lba: u32, sectors: u32) -> Result<Vec<u8>, CdReaderError> {
     let mut buf: *mut u8 = ptr::null_mut();
     let mut len: u32 = 0;
     let mut err: MacScsiError = Default::default();
-
-    let (start_lba, sectors) = get_track_bounds(toc, track_no).map_err(CdReaderError::Io)?;
-    let ok = unsafe { read_cd_audio(start_lba, sectors, &mut buf, &mut len, &mut err) };
+    let ok = unsafe { read_cd_audio(lba, sectors, &mut buf, &mut len, &mut err) };
 
     if !ok {
-        return Err(map_mac_error(
-            err,
-            ScsiOp::ReadCd,
-            Some(start_lba),
-            Some(sectors),
-        ));
+        return Err(map_mac_error(err, ScsiOp::ReadCd, Some(lba), Some(sectors)));
     }
 
     let data = unsafe { slice::from_raw_parts(buf, len as usize) };
@@ -117,4 +166,12 @@ fn map_mac_error(
     }
 
     CdReaderError::Io(std::io::Error::other("macOS SCSI command failed"))
+}
+
+fn next_chunk_size(current: u32, min_chunk: u32) -> u32 {
+    if current > 8 {
+        8.max(min_chunk)
+    } else {
+        min_chunk
+    }
 }

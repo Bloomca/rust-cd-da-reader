@@ -9,7 +9,7 @@ use windows_sys::Win32::Storage::IscsiDisc::{
 };
 use windows_sys::Win32::System::IO::DeviceIoControl;
 
-use crate::{CdReaderError, ScsiError, ScsiOp, Toc, parse_toc, windows_read_track};
+use crate::{CdReaderError, RetryConfig, ScsiError, ScsiOp, Toc, parse_toc, windows_read_track};
 
 use std::mem;
 use std::ptr;
@@ -139,12 +139,20 @@ pub fn read_toc() -> Result<Toc, CdReaderError> {
 }
 
 pub fn read_track(toc: &Toc, track_no: u8) -> Result<Vec<u8>, CdReaderError> {
+    read_track_with_retry(toc, track_no, &RetryConfig::default())
+}
+
+pub fn read_track_with_retry(
+    toc: &Toc,
+    track_no: u8,
+    cfg: &RetryConfig,
+) -> Result<Vec<u8>, CdReaderError> {
     let handle = unsafe {
         DRIVE_HANDLE
             .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Drive not opened"))
             .map_err(CdReaderError::Io)?
     };
-    windows_read_track::read_track(handle, toc, track_no)
+    windows_read_track::read_track_with_retry(handle, toc, track_no, cfg)
 }
 
 fn parse_sense(sense: &[u8], sense_len: u8) -> (Option<u8>, Option<u8>, Option<u8>) {
