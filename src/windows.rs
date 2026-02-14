@@ -165,12 +165,22 @@ pub fn read_track_with_retry(
     track_no: u8,
     cfg: &RetryConfig,
 ) -> Result<Vec<u8>, CdReaderError> {
+    let (start_lba, sectors) =
+        crate::utils::get_track_bounds(toc, track_no).map_err(CdReaderError::Io)?;
+    read_sectors_with_retry(start_lba, sectors, cfg)
+}
+
+pub fn read_sectors_with_retry(
+    start_lba: u32,
+    sectors: u32,
+    cfg: &RetryConfig,
+) -> Result<Vec<u8>, CdReaderError> {
     let handle = unsafe {
         DRIVE_HANDLE
             .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Drive not opened"))
             .map_err(CdReaderError::Io)?
     };
-    windows_read_track::read_track_with_retry(handle, toc, track_no, cfg)
+    windows_read_track::read_audio_range_with_retry(handle, start_lba, sectors, cfg)
 }
 
 fn parse_sense(sense: &[u8], sense_len: u8) -> (Option<u8>, Option<u8>, Option<u8>) {

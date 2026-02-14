@@ -21,11 +21,11 @@ pub fn read_track_with_retry(
     cfg: &RetryConfig,
 ) -> Result<Vec<u8>, CdReaderError> {
     let (start_lba, sectors) = get_track_bounds(toc, track_no).map_err(CdReaderError::Io)?;
-    read_cd_audio_range(handle, start_lba, sectors, cfg)
+    read_audio_range_with_retry(handle, start_lba, sectors, cfg)
 }
 
 // --- READ CD (0xBE): read an arbitrary LBA range as CD-DA (2352 bytes/sector) ---
-fn read_cd_audio_range(
+pub fn read_audio_range_with_retry(
     handle: HANDLE,
     start_lba: u32,
     sectors: u32,

@@ -46,10 +46,12 @@ mod windows;
 mod discovery;
 mod errors;
 mod retry;
+mod stream;
 mod utils;
 pub use discovery::DriveInfo;
 pub use errors::{CdReaderError, ScsiError, ScsiOp};
 pub use retry::RetryConfig;
+pub use stream::{TrackStream, TrackStreamConfig};
 
 mod parse_toc;
 
@@ -206,6 +208,33 @@ impl CdReader {
         #[cfg(target_os = "linux")]
         {
             linux::read_track_with_retry(toc, track_no, cfg)
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+        {
+            compile_error!("Unsupported platform")
+        }
+    }
+
+    pub(crate) fn read_sectors_with_retry(
+        &self,
+        start_lba: u32,
+        sectors: u32,
+        cfg: &RetryConfig,
+    ) -> Result<Vec<u8>, CdReaderError> {
+        #[cfg(target_os = "windows")]
+        {
+            windows::read_sectors_with_retry(start_lba, sectors, cfg)
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            macos::read_sectors_with_retry(start_lba, sectors, cfg)
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            linux::read_sectors_with_retry(start_lba, sectors, cfg)
         }
 
         #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
