@@ -23,7 +23,7 @@ fn default_drive_path() -> &'static str {
 fn read_cd(path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let reader = CdReader::open(path)?;
     let toc = reader.read_toc()?;
-    println!("{:#?}", toc);
+    println!("{toc:#?}");
 
     let last_audio_track = toc
         .tracks

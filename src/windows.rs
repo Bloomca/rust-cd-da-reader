@@ -138,10 +138,6 @@ pub fn read_toc() -> Result<Toc, CdReaderError> {
     parse_toc::parse_toc(data).map_err(|err| CdReaderError::Parse(err.to_string()))
 }
 
-pub fn read_track(toc: &Toc, track_no: u8) -> Result<Vec<u8>, CdReaderError> {
-    read_track_with_retry(toc, track_no, &RetryConfig::default())
-}
-
 pub fn read_track_with_retry(
     toc: &Toc,
     track_no: u8,
