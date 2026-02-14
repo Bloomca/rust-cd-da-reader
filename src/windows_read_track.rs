@@ -14,10 +14,6 @@ use crate::utils::get_track_bounds;
 use crate::windows::SptdWithSense;
 use crate::{CdReaderError, RetryConfig, ScsiError, ScsiOp, Toc};
 
-pub fn read_track(handle: HANDLE, toc: &Toc, track_no: u8) -> Result<Vec<u8>, CdReaderError> {
-    read_track_with_retry(handle, toc, track_no, &RetryConfig::default())
-}
-
 pub fn read_track_with_retry(
     handle: HANDLE,
     toc: &Toc,

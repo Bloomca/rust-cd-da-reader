@@ -8,7 +8,6 @@ static uint8_t task_status_to_scsi_status(SCSITaskStatus status) {
         case kSCSITaskStatus_RESERVATION_CONFLICT: return 0x18;
         case kSCSITaskStatus_TASK_SET_FULL: return 0x28;
         case kSCSITaskStatus_ACA_ACTIVE: return 0x30;
-        case kSCSITaskStatus_TASK_ABORTED: return 0x40;
         default: return 0xFF;
     }
 }
