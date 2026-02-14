@@ -32,8 +32,8 @@ unsafe extern "C" {
         out_err: *mut MacScsiError,
     ) -> bool;
     fn cd_free(p: *mut libc::c_void);
-    fn get_dev_svc(bsd_name: *const libc::c_char) -> bool;
-    fn reset_dev_scv();
+    fn open_dev_session(bsd_name: *const libc::c_char) -> bool;
+    fn close_dev_session();
 }
 
 pub fn list_drive_paths() -> io::Result<Vec<String>> {
@@ -73,9 +73,10 @@ pub fn list_drive_paths() -> io::Result<Vec<String>> {
 pub fn open_drive(path: &str) -> std::io::Result<()> {
     let bsd = CString::new(path).unwrap();
     unsafe { start_da_guard(bsd.as_ptr()) };
-    let result = unsafe { get_dev_svc(bsd.as_ptr()) };
+    let result = unsafe { open_dev_session(bsd.as_ptr()) };
 
     if !result {
+        unsafe { stop_da_guard() };
         return Err(std::io::Error::other("could not get device"));
     }
 
@@ -83,7 +84,7 @@ pub fn open_drive(path: &str) -> std::io::Result<()> {
 }
 
 pub fn close_drive() {
-    unsafe { reset_dev_scv() };
+    unsafe { close_dev_session() };
     unsafe { stop_da_guard() };
 }
 

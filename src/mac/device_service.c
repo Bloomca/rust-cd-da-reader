@@ -1,6 +1,9 @@
 #include "shim_common.h"
 
 io_service_t globalDevSvc = IO_OBJECT_NULL;
+IOCFPlugInInterface **globalPlugin = NULL;
+MMCDeviceInterface **globalMmc = NULL;
+SCSITaskDeviceInterface **globalDev = NULL;
 
 static io_service_t find_media(const char *bsdName) {
     io_iterator_t it = IO_OBJECT_NULL;
@@ -104,7 +107,12 @@ Boolean get_dev_svc(const char *bsdName) {
     }
 
     io_service_t media = find_media(bsdName);
+    if (!media) {
+        fprintf(stderr, "[TOC] Could not find media for bsd\n");
+        return false;
+    }
     io_service_t devSvc = ascend_to_uc(media, kIOMMCDeviceUserClientTypeID);
+    IOObjectRelease(media);
 
     if (!devSvc) {
         fprintf(stderr, "[TOC] Could not find mmc device for bsd\n");
@@ -116,5 +124,88 @@ Boolean get_dev_svc(const char *bsdName) {
 }
 
 void reset_dev_scv(void) {
+    if (globalDevSvc) {
+        IOObjectRelease(globalDevSvc);
+    }
     globalDevSvc = IO_OBJECT_NULL;
+}
+
+Boolean open_dev_session(const char *bsdName) {
+    if (globalDev) {
+        return true;
+    }
+
+    if (!globalDevSvc && !get_dev_svc(bsdName)) {
+        return false;
+    }
+
+    SInt32 score = 0;
+    IOCFPlugInInterface **plugin = NULL;
+    kern_return_t kret = IOCreatePlugInInterfaceForService(
+        globalDevSvc,
+        kIOMMCDeviceUserClientTypeID,
+        kIOCFPlugInInterfaceID,
+        &plugin,
+        &score
+    );
+    if (kret != kIOReturnSuccess || !plugin) {
+        fprintf(stderr, "[OPEN] IOCreatePlugInInterfaceForService failed: 0x%x\n", kret);
+        return false;
+    }
+
+    MMCDeviceInterface **mmc = NULL;
+    HRESULT hr = (*plugin)->QueryInterface(
+        plugin,
+        CFUUIDGetUUIDBytes(kIOMMCDeviceInterfaceID),
+        (LPVOID)&mmc
+    );
+    if (hr != S_OK || !mmc) {
+        fprintf(stderr, "[OPEN] QueryInterface(kIOMMCDeviceInterfaceID) failed (hr=0x%lx)\n", (long)hr);
+        IODestroyPlugInInterface(plugin);
+        return false;
+    }
+
+    SCSITaskDeviceInterface **dev = (*mmc)->GetSCSITaskDeviceInterface(mmc);
+    if (!dev) {
+        fprintf(stderr, "[OPEN] GetSCSITaskDeviceInterface failed\n");
+        (*mmc)->Release(mmc);
+        IODestroyPlugInInterface(plugin);
+        return false;
+    }
+
+    kret = (*dev)->ObtainExclusiveAccess(dev);
+    if (kret != kIOReturnSuccess) {
+        if (kret == kIOReturnBusy) {
+            fprintf(stderr, "[OPEN] Busy on obtaining exclusive access\n");
+        } else {
+            fprintf(stderr, "[OPEN] ObtainExclusiveAccess error: 0x%x\n", kret);
+        }
+        (*mmc)->Release(mmc);
+        IODestroyPlugInInterface(plugin);
+        return false;
+    }
+
+    globalPlugin = plugin;
+    globalMmc = mmc;
+    globalDev = dev;
+    return true;
+}
+
+void close_dev_session(void) {
+    if (globalDev) {
+        (*globalDev)->ReleaseExclusiveAccess(globalDev);
+        globalDev = NULL;
+    }
+
+    if (globalMmc) {
+        (*globalMmc)->Release(globalMmc);
+        globalMmc = NULL;
+    }
+
+    if (globalPlugin) {
+        IODestroyPlugInInterface(globalPlugin);
+        globalPlugin = NULL;
+    }
+
+    reset_dev_scv();
 }

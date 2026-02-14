@@ -44,77 +44,18 @@ static Boolean read_toc(uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr)
         memset(outErr, 0, sizeof(CdScsiError));
     }
 
-    SInt32 score = 0;
-    IOCFPlugInInterface **plugin = NULL;
-    MMCDeviceInterface **mmc = NULL;
-    SCSITaskDeviceInterface **dev = NULL;
+    SCSITaskDeviceInterface **dev = globalDev;
     SCSITaskInterface **task = NULL;
 
-    io_service_t devSvc = globalDevSvc;
-    if (!devSvc && g_guard.bsdName) {
-        (void)get_dev_svc(g_guard.bsdName);
-        devSvc = globalDevSvc;
-    }
-    if (!devSvc) {
-        fprintf(stderr, "[TOC] Could not find mmc device for bsd\n");
-        goto fail;
-    }
-
-    kern_return_t kret = kIOReturnError;
-    for (int attempt = 0; attempt < 2; attempt++) {
-        score = 0;
-        plugin = NULL;
-        kret = IOCreatePlugInInterfaceForService(
-            devSvc,
-            kIOMMCDeviceUserClientTypeID,
-            kIOCFPlugInInterfaceID,
-            &plugin,
-            &score
-        );
-        if (kret == kIOReturnSuccess && plugin != NULL) break;
-
-        fprintf(stderr, "[TOC] IOCreatePlugInInterfaceForService failed: 0x%x\n", kret);
-        if (attempt == 0 && g_guard.bsdName) {
-            reset_dev_scv();
-            (void)get_dev_svc(g_guard.bsdName);
-            devSvc = globalDevSvc;
-            if (!devSvc) break;
-            continue;
-        }
-    }
-
-    if (kret != kIOReturnSuccess || plugin == NULL) {
-        goto fail;
-    }
-
-    HRESULT hr = (*plugin)->QueryInterface(
-        plugin,
-        CFUUIDGetUUIDBytes(kIOMMCDeviceInterfaceID),
-        (LPVOID)&mmc
-    );
-    (void)hr;
-
-    dev = (*mmc)->GetSCSITaskDeviceInterface(mmc);
     if (!dev) {
-        fprintf(stderr, "GetSCSITaskDeviceInterface failed\n");
-        goto fail;
-    }
-
-    // We need exclusive access so CreateSCSITask succeeds.
-    kret = (*dev)->ObtainExclusiveAccess(dev);
-    if (kret != kIOReturnSuccess) {
-        if (kret == kIOReturnBusy) {
-            fprintf(stderr, "[TOC] Busy on obtaining exclusive access\n");
-        } else {
-            fprintf(stderr, "[TOC] ObtainExclusiveAccess error: 0x%x\n", kret);
-        }
+        fprintf(stderr, "[TOC] Device session is not open\n");
         goto fail;
     }
 
     task = (*dev)->CreateSCSITask(dev);
     if (!task) {
         fprintf(stderr, "[TOC] CreateSCSITask failed\n");
-        goto fail_excl;
+        goto fail;
     }
 
     const uint32_t alloc = 2048;
@@ -159,20 +100,13 @@ static Boolean read_toc(uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr)
     *outLen = alloc;
 
     (*task)->Release(task);
-    (*dev)->ReleaseExclusiveAccess(dev);
-    (*mmc)->Release(mmc);
-    IODestroyPlugInInterface(plugin);
     return true;
 
 fail_buf:
     free(buf);
 fail_task:
     if (task) (*task)->Release(task);
-fail_excl:
-    if (dev) (*dev)->ReleaseExclusiveAccess(dev);
 fail:
-    if (mmc) (*mmc)->Release(mmc);
-    if (plugin) IODestroyPlugInInterface(plugin);
     return false;
 }
 
