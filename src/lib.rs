@@ -44,8 +44,10 @@ mod macos;
 mod windows;
 
 mod errors;
+mod retry;
 mod utils;
 pub use errors::{CdReaderError, ScsiError, ScsiOp};
+pub use retry::RetryConfig;
 
 mod parse_toc;
 
@@ -179,19 +181,29 @@ impl CdReader {
     /// wrap the result with `create_wav` function, that will prepend a RIFF header and
     /// make it a proper music file.
     pub fn read_track(&self, toc: &Toc, track_no: u8) -> Result<Vec<u8>, CdReaderError> {
+        self.read_track_with_retry(toc, track_no, &RetryConfig::default())
+    }
+
+    /// Read raw data for the specified track number from the TOC using explicit retry config.
+    pub fn read_track_with_retry(
+        &self,
+        toc: &Toc,
+        track_no: u8,
+        cfg: &RetryConfig,
+    ) -> Result<Vec<u8>, CdReaderError> {
         #[cfg(target_os = "windows")]
         {
-            windows::read_track(toc, track_no)
+            windows::read_track_with_retry(toc, track_no, cfg)
         }
 
         #[cfg(target_os = "macos")]
         {
-            macos::read_track(toc, track_no)
+            macos::read_track_with_retry(toc, track_no, cfg)
         }
 
         #[cfg(target_os = "linux")]
         {
-            linux::read_track(toc, track_no)
+            linux::read_track_with_retry(toc, track_no, cfg)
         }
 
         #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]

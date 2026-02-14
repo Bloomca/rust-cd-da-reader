@@ -132,7 +132,7 @@ bool read_cd_audio(uint32_t lba, uint32_t sectors, uint8_t **outBuf, uint32_t *o
         goto fail_excl;
     }
 
-    const uint32_t MAX_SECTORS_PER_CMD = 32;
+    const uint32_t MAX_SECTORS_PER_CMD = 27;
 
     uint32_t remaining = sectors;
     uint32_t curLBA = lba;
