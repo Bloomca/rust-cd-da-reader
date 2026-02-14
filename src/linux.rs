@@ -4,6 +4,7 @@ use std::ffi::CString;
 use std::fs::File;
 use std::io::Error;
 use std::os::fd::{AsRawFd, FromRawFd};
+use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -46,6 +47,28 @@ struct SgIoHeader {
 const SG_IO: u64 = 0x2285;
 
 static mut DRIVE_HANDLE: Option<File> = None;
+
+pub fn list_drive_paths() -> std::io::Result<Vec<String>> {
+    let mut drives = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir("/sys/class/block") {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with("sr") {
+                drives.push(format!("/dev/{name}"));
+            }
+        }
+    }
+
+    if drives.is_empty() && Path::new("/dev/cdrom").exists() {
+        drives.push("/dev/cdrom".to_string());
+    }
+
+    drives.sort();
+    drives.dedup();
+    Ok(drives)
+}
 
 pub fn open_drive(path: &str) -> std::io::Result<()> {
     let c = CString::new(path).unwrap();

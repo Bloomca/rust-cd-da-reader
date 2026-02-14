@@ -43,9 +43,11 @@ mod macos;
 #[cfg(target_os = "windows")]
 mod windows;
 
+mod discovery;
 mod errors;
 mod retry;
 mod utils;
+pub use discovery::DriveInfo;
 pub use errors::{CdReaderError, ScsiError, ScsiOp};
 pub use retry::RetryConfig;
 

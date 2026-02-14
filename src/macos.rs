@@ -1,4 +1,5 @@
 use std::{ffi::CString, ptr, slice};
+use std::{io, process::Command};
 use std::{thread::sleep, time::Duration};
 
 use crate::parse_toc::parse_toc;
@@ -33,6 +34,40 @@ unsafe extern "C" {
     fn cd_free(p: *mut libc::c_void);
     fn get_dev_svc(bsd_name: *const libc::c_char) -> bool;
     fn reset_dev_scv();
+}
+
+pub fn list_drive_paths() -> io::Result<Vec<String>> {
+    let output = Command::new("diskutil").arg("list").output()?;
+    if !output.status.success() {
+        return Err(io::Error::other("diskutil list failed"));
+    }
+
+    let mut paths = Vec::new();
+    let mut current_disk: Option<String> = None;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for raw_line in stdout.lines() {
+        let line = raw_line.trim();
+
+        if let Some(rest) = line.strip_prefix("/dev/") {
+            let disk = rest.split_whitespace().next().unwrap_or_default();
+            current_disk = if disk.starts_with("disk") {
+                Some(disk.to_string())
+            } else {
+                None
+            };
+            continue;
+        }
+
+        if line.contains("CD_partition_scheme")
+            && let Some(disk) = current_disk.as_ref()
+        {
+            paths.push(disk.clone());
+        }
+    }
+
+    paths.sort();
+    paths.dedup();
+    Ok(paths)
 }
 
 pub fn open_drive(path: &str) -> std::io::Result<()> {
