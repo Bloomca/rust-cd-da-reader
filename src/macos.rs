@@ -113,10 +113,18 @@ pub fn read_track_with_retry(
     track_no: u8,
     cfg: &RetryConfig,
 ) -> Result<Vec<u8>, CdReaderError> {
+    let (start_lba, sectors) = get_track_bounds(toc, track_no).map_err(CdReaderError::Io)?;
+    read_sectors_with_retry(start_lba, sectors, cfg)
+}
+
+pub fn read_sectors_with_retry(
+    start_lba: u32,
+    sectors: u32,
+    cfg: &RetryConfig,
+) -> Result<Vec<u8>, CdReaderError> {
     const SECTOR_BYTES: usize = 2352;
     const MAX_SECTORS_PER_XFER: u32 = 27;
 
-    let (start_lba, sectors) = get_track_bounds(toc, track_no).map_err(CdReaderError::Io)?;
     let mut out = Vec::<u8>::with_capacity((sectors as usize) * SECTOR_BYTES);
     let mut remaining = sectors;
     let mut lba = start_lba;

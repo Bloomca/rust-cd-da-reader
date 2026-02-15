@@ -197,6 +197,14 @@ pub fn read_track_with_retry(
     cfg: &RetryConfig,
 ) -> std::result::Result<Vec<u8>, CdReaderError> {
     let (start_lba, sectors) = get_track_bounds(toc, track_no).map_err(CdReaderError::Io)?;
+    read_sectors_with_retry(start_lba, sectors, cfg)
+}
+
+pub fn read_sectors_with_retry(
+    start_lba: u32,
+    sectors: u32,
+    cfg: &RetryConfig,
+) -> std::result::Result<Vec<u8>, CdReaderError> {
     read_cd_audio_range(start_lba, sectors, cfg)
 }
 

@@ -46,10 +46,12 @@ mod windows;
 mod discovery;
 mod errors;
 mod retry;
+mod stream;
 mod utils;
 pub use discovery::DriveInfo;
 pub use errors::{CdReaderError, ScsiError, ScsiOp};
 pub use retry::RetryConfig;
+pub use stream::{TrackStream, TrackStreamConfig};
 
 mod parse_toc;
 
@@ -93,13 +95,17 @@ pub struct Toc {
 /// Please note that you should not read multiple CDs at the same time, and preferably do
 /// not use it in multiple threads. CD drives are a physical thing and they really want to
 /// have exclusive access, because of that currently only sequential access is supported.
+///
+/// This is especially true on macOS, where releasing exclusive lock on the audio CD will
+/// cause it to remount, and the default application (very likely Apple Music) will get
+/// the exclusive access and it will be challenging to implement a reliable waiting strategy.
 pub struct CdReader {}
 
 impl CdReader {
     /// Opens a CD drive at the specified path in order to read data.
     ///
     /// It is crucial to call this function and not to create the Reader
-    /// by yourself, as each OS needs its own way of handling the drive acess.
+    /// by yourself, as each OS needs its own way of handling the drive access.
     ///
     /// You don't need to close the drive, it will be handled automatically
     /// when the `CdReader` is dropped. On macOS, that will cause the CD drive
@@ -206,6 +212,33 @@ impl CdReader {
         #[cfg(target_os = "linux")]
         {
             linux::read_track_with_retry(toc, track_no, cfg)
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+        {
+            compile_error!("Unsupported platform")
+        }
+    }
+
+    pub(crate) fn read_sectors_with_retry(
+        &self,
+        start_lba: u32,
+        sectors: u32,
+        cfg: &RetryConfig,
+    ) -> Result<Vec<u8>, CdReaderError> {
+        #[cfg(target_os = "windows")]
+        {
+            windows::read_sectors_with_retry(start_lba, sectors, cfg)
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            macos::read_sectors_with_retry(start_lba, sectors, cfg)
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            linux::read_sectors_with_retry(start_lba, sectors, cfg)
         }
 
         #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
