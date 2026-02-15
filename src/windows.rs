@@ -2,8 +2,8 @@ use windows_sys::Win32::Foundation::{
     CloseHandle, GENERIC_READ, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    CreateFileW, DRIVE_CDROM, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_SHARE_WRITE,
-    GetDriveTypeW, OPEN_EXISTING,
+    CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_SHARE_WRITE, GetDriveTypeW,
+    OPEN_EXISTING,
 };
 use windows_sys::Win32::Storage::IscsiDisc::{
     IOCTL_SCSI_PASS_THROUGH_DIRECT, SCSI_IOCTL_DATA_IN, SCSI_PASS_THROUGH_DIRECT,
@@ -22,6 +22,8 @@ pub struct SptdWithSense {
 }
 
 static mut DRIVE_HANDLE: Option<HANDLE> = None;
+// https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getdrivetypew#return-value
+const DRIVE_CDROM: u32 = 5;
 
 pub fn list_drive_paths() -> std::io::Result<Vec<String>> {
     let mut paths = Vec::new();
