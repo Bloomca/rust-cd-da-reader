@@ -36,6 +36,9 @@ typedef struct {
 extern DASessionRef g_session;
 extern DAGuardCtx g_guard;
 extern io_service_t globalDevSvc;
+extern IOCFPlugInInterface **globalPlugin;
+extern MMCDeviceInterface **globalMmc;
+extern SCSITaskDeviceInterface **globalDev;
 
 void start_da_guard(const char *bsdName);
 void stop_da_guard(void);
@@ -46,5 +49,7 @@ void cd_free(void *p);
 
 Boolean get_dev_svc(const char *bsdName);
 void reset_dev_scv(void);
+Boolean open_dev_session(const char *bsdName);
+void close_dev_session(void);
 
 #endif

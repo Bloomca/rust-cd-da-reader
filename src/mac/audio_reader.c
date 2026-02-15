@@ -44,91 +44,29 @@ bool read_cd_audio(uint32_t lba, uint32_t sectors, uint8_t **outBuf, uint32_t *o
         memset(outErr, 0, sizeof(CdScsiError));
     }
 
-    SInt32 score = 0;
-    IOCFPlugInInterface **plugin = NULL;
-    MMCDeviceInterface **mmc = NULL;
-    SCSITaskDeviceInterface **dev = NULL;
-
-    io_service_t devSvc = globalDevSvc;
-    if (!devSvc && g_guard.bsdName) {
-        (void)get_dev_svc(g_guard.bsdName);
-        devSvc = globalDevSvc;
-    }
-    if (!devSvc) {
-        fprintf(stderr, "[READ] Could not find mmc device for bsd\n");
-        goto fail;
-    }
-
-    kern_return_t kret = kIOReturnError;
-    for (int attempt = 0; attempt < 2; attempt++) {
-        score = 0;
-        plugin = NULL;
-        kret = IOCreatePlugInInterfaceForService(
-            devSvc,
-            kIOMMCDeviceUserClientTypeID,
-            kIOCFPlugInInterfaceID,
-            &plugin,
-            &score
-        );
-        if (kret == kIOReturnSuccess && plugin != NULL) break;
-
-        fprintf(stderr, "[READ] IOCreatePlugInInterfaceForService failed: 0x%x\n", kret);
-        if (attempt == 0 && g_guard.bsdName) {
-            reset_dev_scv();
-            (void)get_dev_svc(g_guard.bsdName);
-            devSvc = globalDevSvc;
-            if (!devSvc) break;
-            continue;
-        }
-    }
-    if (kret != kIOReturnSuccess || plugin == NULL) {
-        goto fail;
-    }
-
-    HRESULT hr = (*plugin)->QueryInterface(
-        plugin,
-        CFUUIDGetUUIDBytes(kIOMMCDeviceInterfaceID),
-        (LPVOID)&mmc
-    );
-    if (hr != S_OK || !mmc) {
-        fprintf(stderr, "[READ] QueryInterface(kIOMMCDeviceInterfaceID) failed (hr=0x%lx)\n", (long)hr);
-        goto fail;
-    }
-
-    dev = (*mmc)->GetSCSITaskDeviceInterface(mmc);
+    SCSITaskDeviceInterface **dev = globalDev;
     if (!dev) {
-        fprintf(stderr, "[READ] GetSCSITaskDeviceInterface failed\n");
-        goto fail;
-    }
-
-    // As with TOC: unmount externally, then take exclusive access here.
-    kret = (*dev)->ObtainExclusiveAccess(dev);
-    if (kret != kIOReturnSuccess) {
-        if (kret == kIOReturnBusy) {
-            fprintf(stderr, "[READ] Busy on obtaining exclusive access\n");
-        } else {
-            fprintf(stderr, "[READ] ObtainExclusiveAccess error: 0x%x\n", kret);
-        }
+        fprintf(stderr, "[READ] Device session is not open\n");
         goto fail;
     }
 
     const uint32_t SECTOR_SZ = 2352;
     if (sectors == 0) {
         fprintf(stderr, "[READ] sectors == 0\n");
-        goto fail_excl;
+        goto fail;
     }
 
     uint64_t totalBytes64 = (uint64_t)SECTOR_SZ * (uint64_t)sectors;
     if (totalBytes64 > UINT32_MAX) {
         fprintf(stderr, "[READ] requested size too large\n");
-        goto fail_excl;
+        goto fail;
     }
     uint32_t totalBytes = (uint32_t)totalBytes64;
 
     uint8_t *dst = (uint8_t *)malloc(totalBytes);
     if (!dst) {
         fprintf(stderr, "[READ] oom\n");
-        goto fail_excl;
+        goto fail;
     }
 
     const uint32_t MAX_SECTORS_PER_CMD = 27;
@@ -160,7 +98,7 @@ bool read_cd_audio(uint32_t lba, uint32_t sectors, uint8_t **outBuf, uint32_t *o
         if (!task) {
             fprintf(stderr, "[READ] CreateSCSITask failed\n");
             free(dst);
-            goto fail_excl;
+            goto fail;
         }
 
         IOVirtualRange vr = {0};
@@ -171,7 +109,7 @@ bool read_cd_audio(uint32_t lba, uint32_t sectors, uint8_t **outBuf, uint32_t *o
             fprintf(stderr, "[READ] SetCommandDescriptorBlock failed\n");
             (*task)->Release(task);
             free(dst);
-            goto fail_excl;
+            goto fail;
         }
 
         // dir=2 means from device in SCSITaskLib.
@@ -179,7 +117,7 @@ bool read_cd_audio(uint32_t lba, uint32_t sectors, uint8_t **outBuf, uint32_t *o
             fprintf(stderr, "[READ] SetScatterGatherEntries failed\n");
             (*task)->Release(task);
             free(dst);
-            goto fail_excl;
+            goto fail;
         }
 
         SCSI_Sense_Data sense = {0};
@@ -191,7 +129,7 @@ bool read_cd_audio(uint32_t lba, uint32_t sectors, uint8_t **outBuf, uint32_t *o
             fill_scsi_error(outErr, ex, status, &sense);
             fprintf(stderr, "[READ] ExecuteTaskSync failed (ex=0x%x, status=%u)\n", ex, status);
             free(dst);
-            goto fail_excl;
+            goto fail;
         }
 
         written += bytes;
@@ -202,15 +140,8 @@ bool read_cd_audio(uint32_t lba, uint32_t sectors, uint8_t **outBuf, uint32_t *o
     *outBuf = dst;
     *outLen = written;
 
-    (*dev)->ReleaseExclusiveAccess(dev);
-    (*mmc)->Release(mmc);
-    IODestroyPlugInInterface(plugin);
     return true;
 
-fail_excl:
-    if (dev) (*dev)->ReleaseExclusiveAccess(dev);
 fail:
-    if (mmc) (*mmc)->Release(mmc);
-    if (plugin) IODestroyPlugInInterface(plugin);
     return false;
 }
