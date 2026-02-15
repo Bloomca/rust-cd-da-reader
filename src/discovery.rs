@@ -9,20 +9,32 @@ pub struct DriveInfo {
 
 impl CdReader {
     /// Enumerate candidate optical drives and probe whether they currently have an audio CD.
+    #[cfg(target_os = "macos")]
     pub fn list_drives() -> Result<Vec<DriveInfo>, CdReaderError> {
-        #[cfg(target_os = "windows")]
-        let mut paths = crate::windows::list_drive_paths().map_err(CdReaderError::Io)?;
+        Err(CdReaderError::Io(std::io::Error::other(
+            "list_drives is not reliable on macOS due to remount/re-enumeration; use open_default instead or open a disk directly using CDReader::open",
+        )))
+    }
 
-        #[cfg(target_os = "macos")]
-        let mut paths = crate::macos::list_drive_paths().map_err(CdReaderError::Io)?;
+    /// Enumerate candidate optical drives and probe whether they currently have an audio CD.
+    #[cfg(not(target_os = "macos"))]
+    pub fn list_drives() -> Result<Vec<DriveInfo>, CdReaderError> {
+        let mut paths = {
+            #[cfg(target_os = "windows")]
+            {
+                crate::windows::list_drive_paths().map_err(CdReaderError::Io)?
+            }
 
-        #[cfg(target_os = "linux")]
-        let mut paths = crate::linux::list_drive_paths().map_err(CdReaderError::Io)?;
+            #[cfg(target_os = "linux")]
+            {
+                crate::linux::list_drive_paths().map_err(CdReaderError::Io)?
+            }
 
-        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-        {
-            compile_error!("Unsupported platform")
-        }
+            #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+            {
+                compile_error!("Unsupported platform")
+            }
+        };
 
         paths.sort();
         paths.dedup();
@@ -48,6 +60,32 @@ impl CdReader {
     }
 
     /// Open the first discovered drive that currently has an audio CD.
+    #[cfg(target_os = "macos")]
+    pub fn open_default() -> Result<Self, CdReaderError> {
+        let mut paths = crate::macos::list_drive_paths().map_err(CdReaderError::Io)?;
+        paths.sort();
+        paths.dedup();
+
+        for path in paths {
+            let Ok(reader) = Self::open(&path) else {
+                continue;
+            };
+            let Ok(toc) = reader.read_toc() else {
+                continue;
+            };
+            if toc.tracks.iter().any(|track| track.is_audio) {
+                return Ok(reader);
+            }
+        }
+
+        Err(CdReaderError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "no usable audio CD drive found",
+        )))
+    }
+
+    /// Open the first discovered drive that currently has an audio CD.
+    #[cfg(not(target_os = "macos"))]
     pub fn open_default() -> Result<Self, CdReaderError> {
         let drives = Self::list_drives()?;
         let chosen = pick_default_drive_path(&drives).ok_or_else(|| {
@@ -61,6 +99,7 @@ impl CdReader {
     }
 }
 
+#[cfg(any(test, not(target_os = "macos")))]
 fn pick_default_drive_path(drives: &[DriveInfo]) -> Option<&str> {
     drives
         .iter()
