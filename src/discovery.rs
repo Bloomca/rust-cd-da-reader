@@ -1,14 +1,25 @@
 use crate::{CdReader, CdReaderError};
 
+/// Information about all found drives. This info is not tested extensively, and in
+/// general it is encouraged to provide a disk drive directly.
 #[derive(Debug, Clone)]
 pub struct DriveInfo {
+    /// Path to the drive, which can be something like 'disk6' on macOS,
+    /// '\\.\E:' on Windows, and '/dev/sr0' on Linux
     pub path: String,
+    /// Just the device name, without the full path for the OS
     pub display_name: Option<String>,
+    /// We load the disc and issue a TOC command, which is supported only on media CDs
     pub has_audio_cd: bool,
 }
 
 impl CdReader {
     /// Enumerate candidate optical drives and probe whether they currently have an audio CD.
+    ///
+    /// This method does not work on macOS due to the fact for reliable confirmation
+    /// whether the drive has an Audio CD we need to mount it and later release; macOS
+    /// can assign a different drive name afterwards, so reading that name is unreliable.
+    /// Instead, use open_drive(drive) or open_default(), which acquires the exclusivity
     #[cfg(target_os = "macos")]
     pub fn list_drives() -> Result<Vec<DriveInfo>, CdReaderError> {
         Err(CdReaderError::Io(std::io::Error::other(
@@ -17,6 +28,9 @@ impl CdReader {
     }
 
     /// Enumerate candidate optical drives and probe whether they currently have an audio CD.
+    ///
+    /// On Windows, we try to read type of every drive from A to Z. On Linux, we read
+    /// /sys/class/block directory and check every entry starting with "sr"
     #[cfg(not(target_os = "macos"))]
     pub fn list_drives() -> Result<Vec<DriveInfo>, CdReaderError> {
         let mut paths = {
@@ -60,6 +74,10 @@ impl CdReader {
     }
 
     /// Open the first discovered drive that currently has an audio CD.
+    ///
+    /// On macOS, we open each drive returned from `diskutil list`, and
+    /// evaluate each disk. Once we are able to open it and read correct TOC,
+    /// we return it back with already acquired exclusivity.
     #[cfg(target_os = "macos")]
     pub fn open_default() -> Result<Self, CdReaderError> {
         let mut paths = crate::macos::list_drive_paths().map_err(CdReaderError::Io)?;
@@ -85,6 +103,9 @@ impl CdReader {
     }
 
     /// Open the first discovered drive that currently has an audio CD.
+    ///
+    /// On Windows and Linux, we get the first device from the list and
+    /// try to open it, returning an error if it fails.
     #[cfg(not(target_os = "macos"))]
     pub fn open_default() -> Result<Self, CdReaderError> {
         let drives = Self::list_drives()?;
