@@ -2,9 +2,14 @@ use std::cmp::min;
 
 use crate::{CdReader, CdReaderError, RetryConfig, Toc, utils};
 
+/// Configuration for streamed track reads.
 #[derive(Debug, Clone)]
 pub struct TrackStreamConfig {
+    /// Target chunk size in sectors for each `next_chunk` call.
+    ///
+    /// `27` sectors is approximately 64 KiB of CD-DA payload.
     pub sectors_per_chunk: u32,
+    /// Retry policy applied to each chunk read.
     pub retry: RetryConfig,
 }
 
@@ -17,6 +22,13 @@ impl Default for TrackStreamConfig {
     }
 }
 
+/// Track-scoped streaming reader for CD-DA PCM data.
+/// You can iterate through the data manually; this
+/// allows to receive initial data much faster and
+/// also allows you to navigate to specific points.
+///
+/// To create one, use "reader.open_track_stream" method in
+/// order to have correct drive's lifecycle management.
 pub struct TrackStream<'a> {
     reader: &'a CdReader,
     start_lba: u32,
@@ -29,6 +41,9 @@ pub struct TrackStream<'a> {
 impl<'a> TrackStream<'a> {
     const SECTORS_PER_SECOND: f32 = 75.0;
 
+    /// Read the next chunk of PCM data.
+    ///
+    /// Returns `Ok(None)` when end-of-track is reached.
     pub fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, CdReaderError> {
         self.next_chunk_with(|lba, sectors, retry| {
             self.reader.read_sectors_with_retry(lba, sectors, retry)
@@ -52,18 +67,23 @@ impl<'a> TrackStream<'a> {
         Ok(Some(chunk))
     }
 
+    /// Total number of sectors in this track stream.
     pub fn total_sectors(&self) -> u32 {
         self.total_sectors
     }
 
-    pub fn consumed_sectors(&self) -> u32 {
+    /// Current stream position as a track-relative sector index.
+    /// Keep in mind that if you are playing the sound directly, this
+    /// is likely not the track's current position because you probably
+    /// keep some of the data in your buffer.
+    pub fn current_sector(&self) -> u32 {
         self.total_sectors - self.remaining_sectors
     }
 
-    pub fn current_sector(&self) -> u32 {
-        self.consumed_sectors()
-    }
-
+    /// Seek to an absolute track-relative sector position.
+    ///
+    /// Valid range is `0..=total_sectors()`.
+    /// If the sector value is higher than the total, it will throw an error.
     pub fn seek_to_sector(&mut self, sector: u32) -> Result<(), CdReaderError> {
         if sector > self.total_sectors {
             return Err(CdReaderError::Io(std::io::Error::new(
@@ -77,14 +97,25 @@ impl<'a> TrackStream<'a> {
         Ok(())
     }
 
+    /// Current stream position in seconds. Functionally equivalent
+    /// to "current_sector", but converted to seconds.
+    ///
+    /// Audio CD timing uses `75 sectors = 1 second`.
     pub fn current_seconds(&self) -> f32 {
         self.current_sector() as f32 / Self::SECTORS_PER_SECOND
     }
 
+    /// Total stream duration in seconds. Functionally equivalent
+    /// to "total_sectors", but converted to seconds.
+    ///
+    /// Audio CD timing uses `75 sectors = 1 second`.
     pub fn total_seconds(&self) -> f32 {
         self.total_sectors as f32 / Self::SECTORS_PER_SECOND
     }
 
+    /// Seek to an absolute track-relative time position in seconds.
+    ///
+    /// Input is converted to sector offset and clamped to track bounds.
     pub fn seek_to_seconds(&mut self, seconds: f32) -> Result<(), CdReaderError> {
         if !seconds.is_finite() || seconds < 0.0 {
             return Err(CdReaderError::Io(std::io::Error::new(
@@ -99,6 +130,12 @@ impl<'a> TrackStream<'a> {
 }
 
 impl CdReader {
+    /// Open a streaming reader for a specific track in the provided TOC.
+    /// It is important to create track streams through this method so the
+    /// lifetime for the drive exclusive access is managed through a single
+    /// CDReader instance.
+    ///
+    /// Use `TrackStream::next_chunk` to pull sector-aligned PCM chunks.
     pub fn open_track_stream<'a>(
         &'a self,
         toc: &Toc,

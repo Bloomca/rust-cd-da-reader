@@ -95,13 +95,17 @@ pub struct Toc {
 /// Please note that you should not read multiple CDs at the same time, and preferably do
 /// not use it in multiple threads. CD drives are a physical thing and they really want to
 /// have exclusive access, because of that currently only sequential access is supported.
+///
+/// This is especially true on macOS, where releasing exclusive lock on the audio CD will
+/// cause it to remount, and the default application (very likely Apple Music) will get
+/// the exclusive access and it will be challenging to implement a reliable waiting strategy.
 pub struct CdReader {}
 
 impl CdReader {
     /// Opens a CD drive at the specified path in order to read data.
     ///
     /// It is crucial to call this function and not to create the Reader
-    /// by yourself, as each OS needs its own way of handling the drive acess.
+    /// by yourself, as each OS needs its own way of handling the drive access.
     ///
     /// You don't need to close the drive, it will be handled automatically
     /// when the `CdReader` is dropped. On macOS, that will cause the CD drive
