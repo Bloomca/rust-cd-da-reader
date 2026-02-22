@@ -6,6 +6,7 @@ fn main() {
     println!("cargo:rerun-if-changed=src/mac/list_drives.c");
     println!("cargo:rerun-if-changed=src/mac/toc_reader.c");
     println!("cargo:rerun-if-changed=src/mac/audio_reader.c");
+    println!("cargo:rerun-if-changed=src/mac/data_reader.c");
 
     println!("cargo:rustc-link-lib=framework=IOKit");
     println!("cargo:rustc-link-lib=framework=CoreFoundation");
@@ -14,6 +15,7 @@ fn main() {
         .file("src/mac/list_drives.c")
         .file("src/mac/toc_reader.c")
         .file("src/mac/audio_reader.c")
+        .file("src/mac/data_reader.c")
         .include("src/mac")
         // force C compilation
         .flag("-x")

@@ -38,6 +38,7 @@ extern char globalBsdName[64];
 
 bool cd_read_toc(uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr);
 bool read_cd_audio(uint32_t lba, uint32_t sectors, uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr);
+bool read_cd_data(uint32_t lba, uint32_t sectors, uint8_t cdb_byte1, uint8_t cdb_byte9, uint32_t sector_size, uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr);
 void cd_free(void *p);
 
 bool list_cd_drives(CdDriveInfo **outDrives, uint32_t *outCount);

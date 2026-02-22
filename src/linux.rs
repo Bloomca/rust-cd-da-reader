@@ -86,6 +86,16 @@ pub fn open_drive(path: &str) -> std::io::Result<()> {
 }
 
 #[allow(static_mut_refs)]
+pub(crate) fn get_drive_fd() -> Result<std::os::fd::RawFd, CdReaderError> {
+    use std::os::fd::AsRawFd;
+    unsafe {
+        DRIVE_HANDLE.as_ref().map(|f| f.as_raw_fd()).ok_or_else(|| {
+            CdReaderError::Io(Error::new(std::io::ErrorKind::NotFound, "Drive not opened"))
+        })
+    }
+}
+
+#[allow(static_mut_refs)]
 pub fn close_drive() {
     unsafe {
         if let Some(current_drive) = DRIVE_HANDLE.take() {
