@@ -1,41 +1,151 @@
-//! # CD-DA (or audio CD) reading library
+//! # CD-DA (audio CD) reading library
 //!
-//! This library provides cross-platform audio CD reading capability,
-//! it works on Windows, macOS and Linux.
-//! It is intended to be a low-level library, and only allows you read
-//! TOC and tracks, and you need to provide valid CD drive name.
-//! Currently, the functionality is very basic, and there is no way to
-//! specify subchannel info, access hidden track or read CD text.
+//! This library provides cross-platform audio CD reading capabilities
+//! (tested on Windows, macOS and Linux). It was written to enable CD ripping,
+//! but you can also implement a live audio CD player with its help.
+//! The library works by issuing direct SCSI commands and abstracts both
+//! access to the CD drive and reading the actual data from it, so you don't
+//! deal with the hardware directly.
 //!
-//! The library works by issuing direct SCSI commands.
+//! All operations happen in this order:
 //!
-//! ## Example
+//! 1. Get a CD drive's handle
+//! 2. Read the ToC (table of contents) of the audio CD
+//! 3. Read track data using ranges from the ToC
 //!
-//! ```
+//! ## CD access
+//!
+//! The easiest way to open a drive is to use [`CdReader::open_default`], which scans
+//! all drives and opens the first one that contains an audio CD:
+//!
+//! ```no_run
 //! use cd_da_reader::CdReader;
 //!
-//! fn read_cd() -> Result<(), Box<dyn std::error::Error>> {
-//!   let reader = CdReader::open(r"\\.\E:")?;
-//!   let toc = reader.read_toc()?;
-//!   println!("{:#?}", toc);
-//!   let data = reader.read_track(&toc, 11)?;
-//!   let wav_track = CdReader::create_wav(data);
-//!   std::fs::write("myfile.wav", wav_track)?;
-//!   Ok(())
-//! }
+//! let reader = CdReader::open_default()?;
+//! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! This function reads an audio CD on Windows, you can check your drive letter
-//! in the File Explorer. On macOS, you can run `diskutil list` and look for the
-//! Audio CD in the list (it should be something like "disk4"), and on Linux you
-//! can check it using `cat /proc/sys/dev/cdrom/info`, it will be like "/dev/sr0".
+//! If you need to pick a specific drive, use [`CdReader::list_drives`] followed
+//! by calling [`CdReader::open`] with the specific drive:
+//!
+//! ```no_run
+//! use cd_da_reader::CdReader;
+//!
+//! // Windows / Linux: enumerate drives and inspect the has_audio_cd field
+//! let drives = CdReader::list_drives()?;
+//!
+//! // Any platform: open a known path directly
+//! // Windows:  r"\\.\E:"
+//! // macOS:    "disk6"
+//! // Linux:    "/dev/sr0"
+//! let reader = CdReader::open("disk6")?;
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+//! > **macOS note:** querying drives requires claiming exclusive access, which
+//! > unmounts the disc. Releasing it triggers a remount that hands control to
+//! > the default app (usually Apple Music). Use `open_default` or `open` with a
+//! > known path instead of `list_drives` on macOS.
+//!
+//! ## Reading ToC
+//!
+//! Each audio CD carries a Table of Contents with the block address of every
+//! track. You need to read it first before issuing any track read commands:
+//!
+//! ```no_run
+//! use cd_da_reader::CdReader;
+//!
+//! let reader = CdReader::open_default()?;
+//! let toc = reader.read_toc()?;
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+//! The returned [`Toc`] contains a [`Vec<Track>`](Track) where each entry has
+//! two equivalent address fields:
+//!
+//! - **`start_lba`** -- Logical Block Address, which is a sector index.
+//!   LBA 0 is the first readable sector after the 2-second lead-in pre-gap.
+//!   This is the format used internally for read commands.
+//! - **`start_msf`** — Minutes/Seconds/Frames, a time-based address inherited
+//!   from the physical disc layout. A "frame" is one sector; the spec defines
+//!   75 frames per second. MSF includes a fixed 2-second (150-frame) lead-in
+//!   offset, so `(0, 2, 0)` corresponds to LBA 0. You can convert between them easily:
+//!   `LBA + 150 = total frames`, then divide by 75 and 60 for M/S/F.
+//!
+//! ## Reading tracks
+//!
+//! Pass the [`Toc`] and a track number to [`CdReader::read_track`]. The
+//! library calculates the sector boundaries automatically:
+//!
+//! ```no_run
+//! use cd_da_reader::CdReader;
+//!
+//! let reader = CdReader::open_default()?;
+//! let toc = reader.read_toc()?;
+//! let data = reader.read_track(&toc, 1)?; // we assume track #1 exists and is audio
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+//! This is a blocking call. For a live-playback or progress-reporting use case,
+//! use the streaming API instead:
+//!
+//! ```no_run
+//! use cd_da_reader::{CdReader, RetryConfig, TrackStreamConfig};
+//!
+//! let reader = CdReader::open_default()?;
+//! let toc = reader.read_toc()?;
+//!
+//! let cfg = TrackStreamConfig {
+//!     sectors_per_chunk: 27, // ~64 KB per chunk
+//!     retry: RetryConfig::default(),
+//! };
+//!
+//! let mut stream = reader.open_track_stream(&toc, 1, cfg)?;
+//! while let Some(chunk) = stream.next_chunk()? {
+//!     // process chunk — raw PCM, 2 352 bytes per sector
+//! }
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+//! ## Track format
+//!
+//! Track data is raw [PCM](https://en.wikipedia.org/wiki/Pulse-code_modulation),
+//! the same format used inside WAV files. Audio CDs use 16-bit stereo PCM
+//! sampled at 44 100 Hz:
+//!
+//! ```text
+//! 44 100 samples * 2 channels * 2 bytes = 176 400 bytes/second
+//! ```
+//!
+//! Each sector holds exactly 2 352 bytes (176 400 ÷ 75 = 2 352), that's where
+//! 75 sectors per second comes from. A typical 3-minute track is
+//! ~31 MB; a full 74-minute CD is ~650 MB.
+//!
+//! Converting raw PCM to a playable WAV file only requires prepending a 44-byte
+//! RIFF header — [`CdReader::create_wav`] does exactly that:
+//!
+//! ```no_run
+//! use cd_da_reader::CdReader;
+//!
+//! let reader = CdReader::open_default()?;
+//! let toc = reader.read_toc()?;
+//! let data = reader.read_track(&toc, 1)?;
+//! let wav = CdReader::create_wav(data);
+//! std::fs::write("track01.wav", wav)?;
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
 //!
 //! ## Metadata
 //!
-//! This library does not provide any direct metadata, and audio CDs typically do
-//! not carry it by themselves. To obtain it, you'd need to get it from a place like
-//! [MusicBrainz](https://musicbrainz.org/). You should have all necessary information
-//! in the TOC struct to calculate the audio CD ID.
+//! Audio CDs carry almost no semantic metadata. [CD-TEXT] exists but is
+//! unreliable and because of that is not provided by this lbirary. The practical approach is to
+//! calculate a Disc ID from the ToC and look it up on a service such as
+//! [MusicBrainz]. The [`Toc`] struct exposes everything required for the
+//! [MusicBrainz disc ID algorithm].
+//!
+//! [CD-TEXT]: https://en.wikipedia.org/wiki/CD-Text
+//! [MusicBrainz]: https://musicbrainz.org/
+//! [MusicBrainz disc ID algorithm]: https://musicbrainz.org/doc/Disc_ID_Calculation
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "macos")]
