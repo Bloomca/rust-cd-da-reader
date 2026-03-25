@@ -10,19 +10,8 @@ use windows_sys::Win32::Storage::IscsiDisc::{
 };
 use windows_sys::Win32::System::IO::DeviceIoControl;
 
-use crate::utils::get_track_bounds;
 use crate::windows::SptdWithSense;
-use crate::{CdReaderError, RetryConfig, ScsiError, ScsiOp, Toc};
-
-pub fn read_track_with_retry(
-    handle: HANDLE,
-    toc: &Toc,
-    track_no: u8,
-    cfg: &RetryConfig,
-) -> Result<Vec<u8>, CdReaderError> {
-    let (start_lba, sectors) = get_track_bounds(toc, track_no).map_err(CdReaderError::Io)?;
-    read_audio_range_with_retry(handle, start_lba, sectors, cfg)
-}
+use crate::{CdReaderError, RetryConfig, ScsiError, ScsiOp};
 
 // --- READ CD (0xBE): read an arbitrary LBA range as CD-DA (2352 bytes/sector) ---
 pub fn read_audio_range_with_retry(
