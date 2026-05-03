@@ -81,7 +81,7 @@ The two are fully interchangeable: `LBA + 150 = total frames from disc start`, f
 
 ## Reading tracks
 
-Finally, after we got ToC, we can read tracks. The boundaries for the track are the starting LBA and the starting LBA for the next track (or leadout LBA value for the last track). This library abstracts these things and simply reads provided track numbers. To read a track, all you need to do is call:
+Finally, after we got ToC, we can read tracks. The usual boundaries for the track are the starting LBA and the starting LBA for the next track (or leadout LBA value for the last track). For CD-Extra discs where the last audio track is followed only by data tracks, the library subtracts the standard 11,400-sector audio/data session gap from the first data track start. This library abstracts these things and simply reads provided track numbers. To read a track, all you need to do is call:
 
 ```rust
 use cd_da_reader::{CdReader};
