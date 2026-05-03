@@ -6,6 +6,7 @@
 #import <IOKit/IOCFPlugIn.h>
 #import <IOKit/IOBSD.h>
 #import <IOKit/storage/IOCDMedia.h>
+#import <IOKit/storage/IOCDTypes.h>
 #import <IOKit/scsi/SCSITaskLib.h>
 #import <IOKit/scsi/IOSCSIMultimediaCommandsDevice.h>
 #include <DiskArbitration/DiskArbitration.h>
@@ -33,6 +34,12 @@ typedef struct {
     uint32_t task_status;
 } CdScsiError;
 
+typedef struct {
+    char bsd_name[64];
+    uint8_t has_toc;
+    uint8_t has_audio;
+} CdDriveInfo;
+
 extern DASessionRef g_session;
 extern DAGuardCtx g_guard;
 extern io_service_t globalDevSvc;
@@ -46,6 +53,8 @@ void stop_da_guard(void);
 bool cd_read_toc(uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr);
 bool read_cd_audio(uint32_t lba, uint32_t sectors, uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr);
 void cd_free(void *p);
+
+bool list_cd_drives(CdDriveInfo **outDrives, uint32_t *outCount);
 
 Boolean get_dev_svc(const char *bsdName);
 void reset_dev_scv(void);

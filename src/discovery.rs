@@ -16,15 +16,11 @@ pub struct DriveInfo {
 impl CdReader {
     /// Enumerate candidate optical drives and probe whether they currently have an audio CD.
     ///
-    /// This method does not work on macOS due to the fact for reliable confirmation
-    /// whether the drive has an Audio CD we need to mount it and later release; macOS
-    /// can assign a different drive name afterwards, so reading that name is unreliable.
-    /// Instead, use open_drive(drive) or open_default(), which acquires the exclusivity
+    /// On macOS, this uses the `IOCDMedia` objects published in the I/O Registry and
+    /// inspects their TOC property without claiming exclusive access.
     #[cfg(target_os = "macos")]
     pub fn list_drives() -> Result<Vec<DriveInfo>, CdReaderError> {
-        Err(CdReaderError::Io(std::io::Error::other(
-            "list_drives is not reliable on macOS due to remount/re-enumeration; use open_default instead or open a disk directly using CDReader::open",
-        )))
+        crate::macos::list_drives().map_err(CdReaderError::Io)
     }
 
     /// Enumerate candidate optical drives and probe whether they currently have an audio CD.
