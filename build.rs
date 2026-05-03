@@ -4,6 +4,7 @@ fn main() {
     println!("cargo:rerun-if-changed=src/mac/shim_common.h");
     println!("cargo:rerun-if-changed=src/mac/da_guard.c");
     println!("cargo:rerun-if-changed=src/mac/device_service.c");
+    println!("cargo:rerun-if-changed=src/mac/list_drives.c");
     println!("cargo:rerun-if-changed=src/mac/toc_reader.c");
     println!("cargo:rerun-if-changed=src/mac/audio_reader.c");
 
@@ -13,6 +14,7 @@ fn main() {
     cc::Build::new()
         .file("src/mac/da_guard.c")
         .file("src/mac/device_service.c")
+        .file("src/mac/list_drives.c")
         .file("src/mac/toc_reader.c")
         .file("src/mac/audio_reader.c")
         .include("src/mac")

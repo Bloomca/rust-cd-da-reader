@@ -1,10 +1,11 @@
-use std::{ffi::CString, ptr, slice};
+use std::ffi::{CStr, CString};
 use std::{io, process::Command};
+use std::{ptr, slice};
 use std::{thread::sleep, time::Duration};
 
 use crate::parse_toc::parse_toc;
 use crate::utils::get_track_bounds;
-use crate::{CdReaderError, RetryConfig, ScsiError, ScsiOp, Toc};
+use crate::{CdReaderError, DriveInfo, RetryConfig, ScsiError, ScsiOp, Toc};
 
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy)]
@@ -17,6 +18,14 @@ struct MacScsiError {
     ascq: u8,
     exec_error: u32,
     task_status: u32,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct MacDriveInfo {
+    bsd_name: [libc::c_char; 64],
+    has_toc: u8,
+    has_audio: u8,
 }
 
 #[link(name = "macos_cd_shim", kind = "static")]
@@ -32,6 +41,7 @@ unsafe extern "C" {
         out_err: *mut MacScsiError,
     ) -> bool;
     fn cd_free(p: *mut libc::c_void);
+    fn list_cd_drives(out_drives: *mut *mut MacDriveInfo, out_count: *mut u32) -> bool;
     fn open_dev_session(bsd_name: *const libc::c_char) -> bool;
     fn close_dev_session();
 }
@@ -68,6 +78,46 @@ pub fn list_drive_paths() -> io::Result<Vec<String>> {
     paths.sort();
     paths.dedup();
     Ok(paths)
+}
+
+pub fn list_drives() -> io::Result<Vec<DriveInfo>> {
+    let mut raw_drives: *mut MacDriveInfo = ptr::null_mut();
+    let mut count: u32 = 0;
+
+    let ok = unsafe { list_cd_drives(&mut raw_drives, &mut count) };
+    if !ok {
+        return Err(io::Error::other("could not enumerate CD drives"));
+    }
+
+    let drives = if raw_drives.is_null() || count == 0 {
+        Vec::new()
+    } else {
+        let raw = unsafe { slice::from_raw_parts(raw_drives, count as usize) };
+        let mut drives = Vec::with_capacity(raw.len());
+
+        for drive in raw {
+            let path = unsafe { CStr::from_ptr(drive.bsd_name.as_ptr()) }
+                .to_string_lossy()
+                .into_owned();
+            if path.is_empty() {
+                continue;
+            }
+
+            drives.push(DriveInfo {
+                display_name: Some(path.clone()),
+                path,
+                has_audio_cd: drive.has_audio != 0,
+            });
+        }
+
+        drives.sort_by(|a, b| a.path.cmp(&b.path));
+        drives.dedup_by(|a, b| a.path == b.path);
+        drives
+    };
+
+    unsafe { cd_free(raw_drives as *mut _) };
+
+    Ok(drives)
 }
 
 pub fn open_drive(path: &str) -> std::io::Result<()> {

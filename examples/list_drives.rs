@@ -1,6 +1,4 @@
 /// Lists all optical drives detected on the system and whether they contain an audio CD.
-///
-/// Note: this does not work on macOS — use `open_default` or `open` with a known path instead.
 use cd_da_reader::CdReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
