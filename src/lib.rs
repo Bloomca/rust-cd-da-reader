@@ -70,7 +70,9 @@
 //! ## Reading tracks
 //!
 //! Pass the [`Toc`] and a track number to [`CdReader::read_track`]. The
-//! library calculates the sector boundaries automatically:
+//! library calculates the sector boundaries automatically. On CD-Extra discs
+//! where the last audio track is followed only by data tracks, the trailing
+//! audio/data session gap is excluded from the audio read.
 //!
 //! ```no_run
 //! use cd_da_reader::CdReader;
@@ -189,7 +191,7 @@ pub struct Toc {
     pub last_track: u8,
     /// List of tracks with LBA and MSF offsets
     pub tracks: Vec<Track>,
-    /// Used to calculate number of sectors for the last track. You'll also need this
+    /// Lead-out LBA reported by the drive for the disc TOC. You'll also need this
     /// in order to calculate MusicBrainz ID.
     pub leadout_lba: u32,
 }

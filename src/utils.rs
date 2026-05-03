@@ -1,5 +1,7 @@
 use crate::Toc;
 
+const CD_EXTRA_TRAILING_DATA_GAP_SECTORS: u32 = 11_400;
+
 pub fn get_track_bounds(toc: &Toc, track_no: u8) -> std::io::Result<(u32, u32)> {
     let idx = toc
         .tracks
@@ -8,24 +10,40 @@ pub fn get_track_bounds(toc: &Toc, track_no: u8) -> std::io::Result<(u32, u32)> 
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "track not in TOC"))?;
 
     let start_lba = toc.tracks[idx].start_lba;
-
-    // Determine end LBA (next track start, or lead-out for the last track)
-    let end_lba: u32 = if (idx + 1) < toc.tracks.len() {
-        toc.tracks[idx + 1].start_lba
-    } else {
-        toc.leadout_lba
-    };
+    let end_lba = get_track_end_lba(toc, idx)?;
 
     if end_lba <= start_lba {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "bad TOC bounds",
-        ));
+        return Err(bad_toc_bounds());
     }
 
     let sectors = end_lba - start_lba;
 
     Ok((start_lba, sectors))
+}
+
+fn get_track_end_lba(toc: &Toc, idx: usize) -> std::io::Result<u32> {
+    if is_cd_extra_audio_session_boundary(toc, idx) {
+        return toc.tracks[idx + 1]
+            .start_lba
+            .checked_sub(CD_EXTRA_TRAILING_DATA_GAP_SECTORS)
+            .ok_or_else(bad_toc_bounds);
+    }
+
+    if (idx + 1) < toc.tracks.len() {
+        Ok(toc.tracks[idx + 1].start_lba)
+    } else {
+        Ok(toc.leadout_lba)
+    }
+}
+
+fn is_cd_extra_audio_session_boundary(toc: &Toc, idx: usize) -> bool {
+    toc.tracks[idx].is_audio
+        && (idx + 1) < toc.tracks.len()
+        && toc.tracks[idx + 1..].iter().all(|track| !track.is_audio)
+}
+
+fn bad_toc_bounds() -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::InvalidData, "bad TOC bounds")
 }
 
 pub fn create_wav_header(pcm_data_size: u32) -> Vec<u8> {
@@ -134,6 +152,15 @@ mod test {
         }
     }
 
+    fn track(number: u8, start_lba: u32, is_audio: bool) -> Track {
+        Track {
+            number,
+            start_lba,
+            start_msf: (0, 0, 0),
+            is_audio,
+        }
+    }
+
     #[test]
     fn finds_non_last_track_bounds_correctly() {
         let toc = get_toc();
@@ -155,6 +182,53 @@ mod test {
         let (start_lba, sectors) = result.unwrap();
         assert_eq!(start_lba, 179485);
         assert_eq!(sectors, 204855 - 179485);
+    }
+
+    #[test]
+    fn subtracts_cd_extra_gap_for_last_audio_track_before_trailing_data_tracks() {
+        let toc = Toc {
+            first_track: 1,
+            last_track: 4,
+            tracks: vec![
+                track(1, 0, true),
+                track(2, 10_000, true),
+                track(3, 40_000, false),
+                track(4, 80_000, false),
+            ],
+            leadout_lba: 120_000,
+        };
+
+        let result = get_track_bounds(&toc, 2);
+        assert!(result.is_ok());
+        let (start_lba, sectors) = result.unwrap();
+
+        assert_eq!(start_lba, 10_000);
+        assert_eq!(
+            sectors,
+            (40_000 - CD_EXTRA_TRAILING_DATA_GAP_SECTORS) - 10_000
+        );
+    }
+
+    #[test]
+    fn does_not_subtract_cd_extra_gap_when_audio_track_follows_later() {
+        let toc = Toc {
+            first_track: 1,
+            last_track: 4,
+            tracks: vec![
+                track(1, 0, true),
+                track(2, 10_000, true),
+                track(3, 40_000, false),
+                track(4, 80_000, true),
+            ],
+            leadout_lba: 120_000,
+        };
+
+        let result = get_track_bounds(&toc, 2);
+        assert!(result.is_ok());
+        let (start_lba, sectors) = result.unwrap();
+
+        assert_eq!(start_lba, 10_000);
+        assert_eq!(sectors, 40_000 - 10_000);
     }
 
     #[test]
