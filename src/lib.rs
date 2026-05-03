@@ -3,9 +3,9 @@
 //! This library provides cross-platform audio CD reading capabilities
 //! (tested on Windows, macOS and Linux). It was written to enable CD ripping,
 //! but you can also implement a live audio CD player with its help.
-//! The library works by issuing direct SCSI commands and abstracts both
-//! access to the CD drive and reading the actual data from it, so you don't
-//! deal with the hardware directly.
+//! The library works through platform CD-drive APIs on macOS and issuing direct
+//! SCSI commands on Windows and Linux and abstracts both access to the CD drive
+//! and reading the actual data from it, so you don't deal with the hardware directly.
 //!
 //! All operations happen in this order:
 //!
@@ -41,11 +41,6 @@
 //! let reader = CdReader::open("disk6")?;
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
-//!
-//! > **macOS note:** querying drives requires claiming exclusive access, which
-//! > unmounts the disc. Releasing it triggers a remount that hands control to
-//! > the default app (usually Apple Music). Use `open_default` or `open` with a
-//! > known path instead of `list_drives` on macOS.
 //!
 //! ## Reading ToC
 //!
@@ -203,12 +198,8 @@ pub struct Toc {
 /// directly, it implements `Drop` trait, so that the CD drive handle is properly closed.
 ///
 /// Please note that you should not read multiple CDs at the same time, and preferably do
-/// not use it in multiple threads. CD drives are a physical thing and they really want to
-/// have exclusive access, because of that currently only sequential access is supported.
-///
-/// This is especially true on macOS, where releasing exclusive lock on the audio CD will
-/// cause it to remount, and the default application (very likely Apple Music) will get
-/// the exclusive access and it will be challenging to implement a reliable waiting strategy.
+/// not use it in multiple threads. CD drives are physical devices, so currently only
+/// sequential access is properly tested and supported.
 pub struct CdReader {}
 
 impl CdReader {
@@ -217,10 +208,8 @@ impl CdReader {
     /// It is crucial to call this function and not to create the Reader
     /// by yourself, as each OS needs its own way of handling the drive access.
     ///
-    /// You don't need to close the drive, it will be handled automatically
-    /// when the `CdReader` is dropped. On macOS, that will cause the CD drive
-    /// to be remounted, and the default application (like Apple Music) will
-    /// be called.
+    /// You don't need to close the drive; it will be handled automatically
+    /// when the `CdReader` is dropped.
     ///
     /// # Arguments
     ///

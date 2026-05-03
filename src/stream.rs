@@ -132,8 +132,7 @@ impl<'a> TrackStream<'a> {
 impl CdReader {
     /// Open a streaming reader for a specific track in the provided TOC.
     /// It is important to create track streams through this method so the
-    /// lifetime for the drive exclusive access is managed through a single
-    /// CDReader instance.
+    /// drive session is managed through a single CDReader instance.
     ///
     /// Use `TrackStream::next_chunk` to pull sector-aligned PCM chunks.
     pub fn open_track_stream<'a>(

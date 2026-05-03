@@ -1,42 +1,5 @@
 #include "shim_common.h"
 
-static uint8_t task_status_to_scsi_status(SCSITaskStatus status) {
-    switch (status) {
-        case kSCSITaskStatus_GOOD: return 0x00;
-        case kSCSITaskStatus_CHECK_CONDITION: return 0x02;
-        case kSCSITaskStatus_BUSY: return 0x08;
-        case kSCSITaskStatus_RESERVATION_CONFLICT: return 0x18;
-        case kSCSITaskStatus_TASK_SET_FULL: return 0x28;
-        case kSCSITaskStatus_ACA_ACTIVE: return 0x30;
-        default: return 0xFF;
-    }
-}
-
-static void fill_scsi_error(CdScsiError *outErr, kern_return_t ex, SCSITaskStatus status, SCSI_Sense_Data *sense) {
-    if (!outErr) return;
-
-    outErr->has_scsi_error = 1;
-    outErr->exec_error = (uint32_t)ex;
-    outErr->task_status = (uint32_t)status;
-    outErr->scsi_status = task_status_to_scsi_status(status);
-
-    const uint8_t *sense_bytes = (const uint8_t *)sense;
-    bool has_sense = false;
-    for (size_t i = 0; i < sizeof(SCSI_Sense_Data); i++) {
-        if (sense_bytes[i] != 0) {
-            has_sense = true;
-            break;
-        }
-    }
-
-    outErr->has_sense = has_sense ? 1 : 0;
-    if (has_sense && sizeof(SCSI_Sense_Data) >= 14) {
-        outErr->sense_key = sense_bytes[2] & 0x0F;
-        outErr->asc = sense_bytes[12];
-        outErr->ascq = sense_bytes[13];
-    }
-}
-
 static Boolean read_toc(uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr) {
     *outBuf = NULL;
     *outLen = 0;
@@ -44,68 +7,133 @@ static Boolean read_toc(uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr)
         memset(outErr, 0, sizeof(CdScsiError));
     }
 
-    SCSITaskDeviceInterface **dev = globalDev;
-    SCSITaskInterface **task = NULL;
-
-    if (!dev) {
-        fprintf(stderr, "[TOC] Device session is not open\n");
+    int fd = open_cd_raw_device();
+    if (fd < 0) {
+        fprintf(stderr, "[TOC] open raw CD device failed (errno=%d)\n", errno);
         goto fail;
     }
 
-    task = (*dev)->CreateSCSITask(dev);
-    if (!task) {
-        fprintf(stderr, "[TOC] CreateSCSITask failed\n");
+    const uint16_t rawAlloc = 4096;
+    uint8_t *raw = malloc(rawAlloc);
+    if (!raw) {
+        close(fd);
+        fprintf(stderr, "[TOC] oom\n");
         goto fail;
     }
 
-    const uint32_t alloc = 2048;
-    uint8_t cdb[10] = {0};
-    cdb[0] = 0x43; // READ TOC/PMA/ATIP
-    cdb[1] = 0x00; // LBA format
-    cdb[2] = 0x00; // Format 0x00: TOC
-    cdb[6] = 0x00; // Starting track 0 = first track/session
-    cdb[7] = (alloc >> 8) & 0xFF;
-    cdb[8] = alloc & 0xFF;
+    dk_cd_read_toc_t request = {0};
+    request.format = kCDTOCFormatTOC;
+    request.formatAsTime = 1;
+    request.address.session = 0;
+    request.bufferLength = rawAlloc;
+    request.buffer = raw;
 
-    IOVirtualRange vr = {.address = 0, .length = 0};
-    uint8_t *buf = malloc(alloc);
+    int ret = ioctl(fd, DKIOCCDREADTOC, &request);
+    close(fd);
+
+    if (ret < 0) {
+        fprintf(stderr, "[TOC] DKIOCCDREADTOC failed (errno=%d)\n", errno);
+        free(raw);
+        goto fail;
+    }
+
+    if (request.bufferLength < sizeof(CDTOC)) {
+        fprintf(stderr, "[TOC] returned TOC is too short\n");
+        free(raw);
+        goto fail;
+    }
+
+    CDTOC *toc = (CDTOC *)raw;
+    uint16_t tocLength = OSSwapBigToHostInt16(toc->length);
+    size_t tocSize = (size_t)tocLength + sizeof(toc->length);
+    if (tocSize > request.bufferLength) {
+        fprintf(stderr, "[TOC] returned TOC length is invalid\n");
+        free(raw);
+        goto fail;
+    }
+
+    CDTOCDescriptor *tracks[100] = {0};
+    CDTOCDescriptor *leadout = NULL;
+    uint8_t firstTrack = 0;
+    uint8_t lastTrack = 0;
+    uint32_t trackCount = 0;
+
+    UInt32 descriptorCount = CDTOCGetDescriptorCount(toc);
+    for (UInt32 i = 0; i < descriptorCount; i++) {
+        CDTOCDescriptor *desc = &toc->descriptors[i];
+        if (desc->adr != 1) {
+            continue;
+        }
+
+        if (desc->point >= 1 && desc->point <= 99) {
+            if (!tracks[desc->point]) {
+                trackCount++;
+            }
+            tracks[desc->point] = desc;
+            if (firstTrack == 0 || desc->point < firstTrack) {
+                firstTrack = desc->point;
+            }
+            if (desc->point > lastTrack) {
+                lastTrack = desc->point;
+            }
+        } else if (desc->point == 0xA2) {
+            leadout = desc;
+        }
+    }
+
+    if (trackCount == 0 || !leadout) {
+        fprintf(stderr, "[TOC] did not find track descriptors and leadout\n");
+        free(raw);
+        goto fail;
+    }
+
+    uint32_t outputDescriptors = trackCount + 1;
+    uint16_t outputTocLength = (uint16_t)(2 + outputDescriptors * 8);
+    uint32_t outputLen = (uint32_t)outputTocLength + sizeof(uint16_t);
+    uint8_t *buf = malloc(outputLen);
     if (!buf) {
-        fprintf(stderr, "oom\n");
-        goto fail_task;
+        free(raw);
+        fprintf(stderr, "[TOC] oom\n");
+        goto fail;
     }
-    vr.address = (IOVirtualAddress)buf;
-    vr.length = alloc;
+    memset(buf, 0, outputLen);
 
-    if ((*task)->SetCommandDescriptorBlock(task, cdb, sizeof(cdb)) != kIOReturnSuccess) {
-        fprintf(stderr, "SetCommandDescriptorBlock failed\n");
-        goto fail_buf;
+    buf[0] = (uint8_t)((outputTocLength >> 8) & 0xFF);
+    buf[1] = (uint8_t)(outputTocLength & 0xFF);
+    buf[2] = firstTrack;
+    buf[3] = lastTrack;
+
+    uint32_t offset = 4;
+    for (uint8_t track = firstTrack; track <= lastTrack; track++) {
+        CDTOCDescriptor *desc = tracks[track];
+        if (!desc) {
+            continue;
+        }
+
+        uint32_t lba = CDConvertMSFToLBA(desc->p);
+        buf[offset + 1] = (uint8_t)((desc->adr << 4) | desc->control);
+        buf[offset + 2] = track;
+        buf[offset + 4] = (uint8_t)((lba >> 24) & 0xFF);
+        buf[offset + 5] = (uint8_t)((lba >> 16) & 0xFF);
+        buf[offset + 6] = (uint8_t)((lba >> 8) & 0xFF);
+        buf[offset + 7] = (uint8_t)(lba & 0xFF);
+        offset += 8;
     }
 
-    // 0 = no data, 1 = to device, 2 = from device
-    if ((*task)->SetScatterGatherEntries(task, &vr, 1, alloc, 2) != kIOReturnSuccess) {
-        fprintf(stderr, "SetScatterGatherEntries failed\n");
-        goto fail_buf;
-    }
+    uint32_t leadoutLba = CDConvertMSFToLBA(leadout->p);
+    buf[offset + 1] = (uint8_t)((leadout->adr << 4) | leadout->control);
+    buf[offset + 2] = 0xAA;
+    buf[offset + 4] = (uint8_t)((leadoutLba >> 24) & 0xFF);
+    buf[offset + 5] = (uint8_t)((leadoutLba >> 16) & 0xFF);
+    buf[offset + 6] = (uint8_t)((leadoutLba >> 8) & 0xFF);
+    buf[offset + 7] = (uint8_t)(leadoutLba & 0xFF);
 
-    SCSI_Sense_Data sense = {0};
-    SCSITaskStatus status = kSCSITaskStatus_No_Status;
-    kern_return_t ex = (*task)->ExecuteTaskSync(task, &sense, &status, NULL);
-    if (ex != kIOReturnSuccess || status != kSCSITaskStatus_GOOD) {
-        fill_scsi_error(outErr, ex, status, &sense);
-        fprintf(stderr, "ExecuteTaskSync failed (status=%u)\n", status);
-        goto fail_buf;
-    }
+    free(raw);
 
     *outBuf = buf;
-    *outLen = alloc;
-
-    (*task)->Release(task);
+    *outLen = outputLen;
     return true;
 
-fail_buf:
-    free(buf);
-fail_task:
-    if (task) (*task)->Release(task);
 fail:
     return false;
 }

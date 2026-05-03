@@ -1,5 +1,5 @@
 use std::ffi::{CStr, CString};
-use std::{io, process::Command};
+use std::io;
 use std::{ptr, slice};
 use std::{thread::sleep, time::Duration};
 
@@ -30,8 +30,6 @@ struct MacDriveInfo {
 
 #[link(name = "macos_cd_shim", kind = "static")]
 unsafe extern "C" {
-    fn start_da_guard(bsd_name: *const libc::c_char);
-    fn stop_da_guard();
     fn cd_read_toc(out_buf: *mut *mut u8, out_len: *mut u32, out_err: *mut MacScsiError) -> bool;
     fn read_cd_audio(
         lba: u32,
@@ -44,40 +42,6 @@ unsafe extern "C" {
     fn list_cd_drives(out_drives: *mut *mut MacDriveInfo, out_count: *mut u32) -> bool;
     fn open_dev_session(bsd_name: *const libc::c_char) -> bool;
     fn close_dev_session();
-}
-
-pub fn list_drive_paths() -> io::Result<Vec<String>> {
-    let output = Command::new("diskutil").arg("list").output()?;
-    if !output.status.success() {
-        return Err(io::Error::other("diskutil list failed"));
-    }
-
-    let mut paths = Vec::new();
-    let mut current_disk: Option<String> = None;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for raw_line in stdout.lines() {
-        let line = raw_line.trim();
-
-        if let Some(rest) = line.strip_prefix("/dev/") {
-            let disk = rest.split_whitespace().next().unwrap_or_default();
-            current_disk = if disk.starts_with("disk") {
-                Some(disk.to_string())
-            } else {
-                None
-            };
-            continue;
-        }
-
-        if line.contains("CD_partition_scheme")
-            && let Some(disk) = current_disk.as_ref()
-        {
-            paths.push(disk.clone());
-        }
-    }
-
-    paths.sort();
-    paths.dedup();
-    Ok(paths)
 }
 
 pub fn list_drives() -> io::Result<Vec<DriveInfo>> {
@@ -122,11 +86,9 @@ pub fn list_drives() -> io::Result<Vec<DriveInfo>> {
 
 pub fn open_drive(path: &str) -> std::io::Result<()> {
     let bsd = CString::new(path).unwrap();
-    unsafe { start_da_guard(bsd.as_ptr()) };
     let result = unsafe { open_dev_session(bsd.as_ptr()) };
 
     if !result {
-        unsafe { stop_da_guard() };
         return Err(std::io::Error::other("could not get device"));
     }
 
@@ -135,7 +97,6 @@ pub fn open_drive(path: &str) -> std::io::Result<()> {
 
 pub fn close_drive() {
     unsafe { close_dev_session() };
-    unsafe { stop_da_guard() };
 }
 
 pub fn read_toc() -> Result<Toc, CdReaderError> {
@@ -259,7 +220,7 @@ fn map_mac_error(
         });
     }
 
-    CdReaderError::Io(std::io::Error::other("macOS SCSI command failed"))
+    CdReaderError::Io(std::io::Error::other("macOS CD command failed"))
 }
 
 fn next_chunk_size(current: u32, min_chunk: u32) -> u32 {
