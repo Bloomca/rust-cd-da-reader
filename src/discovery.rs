@@ -9,7 +9,7 @@ pub struct DriveInfo {
     pub path: String,
     /// Just the device name, without the full path for the OS
     pub display_name: Option<String>,
-    /// We load the disc and issue a TOC command, which is supported only on media CDs
+    /// Whether the current disc appears to contain at least one audio track.
     pub has_audio_cd: bool,
 }
 
@@ -71,31 +71,23 @@ impl CdReader {
 
     /// Open the first discovered drive that currently has an audio CD.
     ///
-    /// On macOS, we open each drive returned from `diskutil list`, and
-    /// evaluate each disk. Once we are able to open it and read correct TOC,
-    /// we return it back with already acquired exclusivity.
+    /// On macOS, we use the passive `IOCDMedia` discovery path and then open
+    /// the matching BSD device name without claiming exclusive access.
     #[cfg(target_os = "macos")]
     pub fn open_default() -> Result<Self, CdReaderError> {
-        let mut paths = crate::macos::list_drive_paths().map_err(CdReaderError::Io)?;
-        paths.sort();
-        paths.dedup();
+        let drives = Self::list_drives()?;
+        let chosen = drives
+            .iter()
+            .find(|drive| drive.has_audio_cd)
+            .map(|drive| drive.path.as_str())
+            .ok_or_else(|| {
+                CdReaderError::Io(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "no usable audio CD drive found",
+                ))
+            })?;
 
-        for path in paths {
-            let Ok(reader) = Self::open(&path) else {
-                continue;
-            };
-            let Ok(toc) = reader.read_toc() else {
-                continue;
-            };
-            if toc.tracks.iter().any(|track| track.is_audio) {
-                return Ok(reader);
-            }
-        }
-
-        Err(CdReaderError::Io(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "no usable audio CD drive found",
-        )))
+        Self::open(chosen).map_err(CdReaderError::Io)
     }
 
     /// Open the first discovered drive that currently has an audio CD.

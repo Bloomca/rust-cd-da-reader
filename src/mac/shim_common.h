@@ -3,25 +3,19 @@
 
 #import <CoreFoundation/CoreFoundation.h>
 #import <IOKit/IOKitLib.h>
-#import <IOKit/IOCFPlugIn.h>
 #import <IOKit/IOBSD.h>
+#import <IOKit/storage/IOCDMediaBSDClient.h>
 #import <IOKit/storage/IOCDMedia.h>
 #import <IOKit/storage/IOCDTypes.h>
-#import <IOKit/scsi/SCSITaskLib.h>
-#import <IOKit/scsi/IOSCSIMultimediaCommandsDevice.h>
-#include <DiskArbitration/DiskArbitration.h>
-#include <dispatch/dispatch.h>
 
 #include <stdbool.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-typedef struct {
-    const char *bsdName;
-    dispatch_semaphore_t sem;
-} DAGuardCtx;
+#include <unistd.h>
 
 typedef struct {
     uint8_t has_scsi_error;
@@ -40,15 +34,7 @@ typedef struct {
     uint8_t has_audio;
 } CdDriveInfo;
 
-extern DASessionRef g_session;
-extern DAGuardCtx g_guard;
-extern io_service_t globalDevSvc;
-extern IOCFPlugInInterface **globalPlugin;
-extern MMCDeviceInterface **globalMmc;
-extern SCSITaskDeviceInterface **globalDev;
-
-void start_da_guard(const char *bsdName);
-void stop_da_guard(void);
+extern char globalBsdName[64];
 
 bool cd_read_toc(uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr);
 bool read_cd_audio(uint32_t lba, uint32_t sectors, uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr);
@@ -56,8 +42,7 @@ void cd_free(void *p);
 
 bool list_cd_drives(CdDriveInfo **outDrives, uint32_t *outCount);
 
-Boolean get_dev_svc(const char *bsdName);
-void reset_dev_scv(void);
+int open_cd_raw_device(void);
 Boolean open_dev_session(const char *bsdName);
 void close_dev_session(void);
 

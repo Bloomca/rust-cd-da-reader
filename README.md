@@ -31,20 +31,13 @@ use cd_da_reader::{CdReader};
 let drives = CdReader::list_drives()?;
 ```
 
-This will give you a vector of drives, and the struct will have `has_audio_cd` field for audio CDs. Unfortunately, this does not work on macOS due to how CD drive handles are treated. When we execute any command to a CD drive (which we need to check whether the CD is audio or not), we need to claim exclusivity, which will cause it to unmount. If we release the handle, it will cause it to remount, and that will do 2 things:
+This will give you a vector of drives, and the struct will have `has_audio_cd` field for audio CDs.
 
-1. call the default application for an audio CD (probably Apple Music)
-2. that app will claim exclusivity, so we won't be able to get it back for some time
-
-Because of that, on macOS you should either provide the name by yourself, or get the default drive:
+If you already know the drive name, you can open it directly:
 
 ```rust
 use cd_da_reader::{CdReader};
 
-// get the default drive, which should be what you want
-let reader = CdReader::open_default()?;
-
-// or read the disk directly
 let reader = CdReader::open("disk14")?;
 ```
 
