@@ -78,6 +78,17 @@ pub fn open_drive(path: &str) -> std::io::Result<()> {
     Ok(())
 }
 
+pub(crate) fn get_drive_handle() -> Result<HANDLE, CdReaderError> {
+    unsafe {
+        DRIVE_HANDLE.ok_or_else(|| {
+            CdReaderError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Drive not opened",
+            ))
+        })
+    }
+}
+
 pub fn close_drive() {
     unsafe {
         if let Some(current_drive) = DRIVE_HANDLE {

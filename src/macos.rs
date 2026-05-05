@@ -38,6 +38,16 @@ unsafe extern "C" {
         out_len: *mut u32,
         out_err: *mut MacScsiError,
     ) -> bool;
+    fn read_cd_data(
+        lba: u32,
+        sectors: u32,
+        cdb_byte1: u8,
+        cdb_byte9: u8,
+        sector_size: u32,
+        out_buf: *mut *mut u8,
+        out_len: *mut u32,
+        out_err: *mut MacScsiError,
+    ) -> bool;
     fn cd_free(p: *mut libc::c_void);
     fn list_cd_drives(out_drives: *mut *mut MacDriveInfo, out_count: *mut u32) -> bool;
     fn open_dev_session(bsd_name: *const libc::c_char) -> bool;
@@ -221,6 +231,37 @@ fn map_mac_error(
     }
 
     CdReaderError::Io(std::io::Error::other("macOS CD command failed"))
+}
+
+pub(crate) fn read_data_chunk(
+    lba: u32,
+    sectors: u32,
+    mode: &crate::data_reader::SectorReadMode,
+) -> Result<Vec<u8>, CdReaderError> {
+    let mut buf: *mut u8 = ptr::null_mut();
+    let mut len: u32 = 0;
+    let mut err: MacScsiError = Default::default();
+    let ok = unsafe {
+        read_cd_data(
+            lba,
+            sectors,
+            mode.cdb_byte1(),
+            mode.cdb_byte9(),
+            mode.sector_size() as u32,
+            &mut buf,
+            &mut len,
+            &mut err,
+        )
+    };
+
+    if !ok {
+        return Err(map_mac_error(err, ScsiOp::ReadCd, Some(lba), Some(sectors)));
+    }
+
+    let data = unsafe { slice::from_raw_parts(buf, len as usize) };
+    let result = data.to_vec();
+    unsafe { cd_free(buf as *mut _) };
+    Ok(result)
 }
 
 fn next_chunk_size(current: u32, min_chunk: u32) -> u32 {
