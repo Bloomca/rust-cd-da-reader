@@ -38,7 +38,7 @@ Boolean open_dev_session(const char *bsdName) {
 
     snprintf(globalBsdName, sizeof(globalBsdName), "%s", bsdName);
 
-    CFMutableDictionaryRef matching = IOServiceMatching(kIOMediaClass);
+    CFMutableDictionaryRef matching = IOServiceMatching(kIOCDMediaClass);
     if (!matching) return false;
 
     CFStringRef cfBsdName = CFStringCreateWithCString(kCFAllocatorDefault, bsdName, kCFStringEncodingUTF8);
@@ -49,7 +49,7 @@ Boolean open_dev_session(const char *bsdName) {
     CFDictionaryAddValue(matching, CFSTR(kIOBSDNameKey), cfBsdName);
     CFRelease(cfBsdName);
 
-    io_service_t service = IOServiceGetMatchingService(kIOMasterPortDefault, matching);
+    io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault, matching);
     if (!service) return false;
 
     io_service_t taskDevice = IO_OBJECT_NULL;
@@ -76,7 +76,7 @@ Boolean open_dev_session(const char *bsdName) {
         return false;
     }
 
-    S32 score = 0;
+    SInt32 score = 0;
     kern_return_t kr = IOCreatePlugInInterfaceForService(
         taskDevice,
         kSCSITaskDeviceUserClientTypeID,
