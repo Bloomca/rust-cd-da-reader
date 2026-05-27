@@ -335,7 +335,35 @@ impl CdReader {
         mode: SectorReadMode,
         cfg: &RetryConfig,
     ) -> Result<Vec<u8>, CdReaderError> {
-        data_reader::read_data_sectors(lba, count, mode, cfg)
+        self.read_sectors_with_mode(lba, count, &mode, cfg)
+    }
+
+    pub(crate) fn read_sectors_with_mode(
+        &self,
+        start_lba: u32,
+        sectors: u32,
+        mode: &SectorReadMode,
+        cfg: &RetryConfig,
+    ) -> Result<Vec<u8>, CdReaderError> {
+        #[cfg(target_os = "windows")]
+        {
+            windows::read_sectors_with_mode(start_lba, sectors, mode, cfg)
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            macos::read_sectors_with_mode(start_lba, sectors, mode, cfg)
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            linux::read_sectors_with_mode(start_lba, sectors, mode, cfg)
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+        {
+            compile_error!("Unsupported platform")
+        }
     }
 
     pub(crate) fn read_sectors_with_retry(

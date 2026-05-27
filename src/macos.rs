@@ -5,6 +5,7 @@ use std::{thread::sleep, time::Duration};
 
 use crate::parse_toc::parse_toc;
 use crate::utils::get_track_bounds;
+use crate::data_reader::SectorReadMode;
 use crate::{CdReaderError, DriveInfo, RetryConfig, ScsiError, ScsiOp, Toc};
 
 #[repr(C)]
@@ -143,22 +144,31 @@ pub fn read_sectors_with_retry(
     sectors: u32,
     cfg: &RetryConfig,
 ) -> Result<Vec<u8>, CdReaderError> {
-    const SECTOR_BYTES: usize = 2352;
-    const MAX_SECTORS_PER_XFER: u32 = 27;
+    read_sectors_with_mode(start_lba, sectors, &SectorReadMode::Audio, cfg)
+}
 
-    let mut out = Vec::<u8>::with_capacity((sectors as usize) * SECTOR_BYTES);
+pub fn read_sectors_with_mode(
+    start_lba: u32,
+    sectors: u32,
+    mode: &SectorReadMode,
+    cfg: &RetryConfig,
+) -> Result<Vec<u8>, CdReaderError> {
+    let sector_size = mode.sector_size();
+    let max_sectors_per_xfer = mode.max_sectors_per_xfer();
+
+    let mut out = Vec::<u8>::with_capacity((sectors as usize) * sector_size);
     let mut remaining = sectors;
     let mut lba = start_lba;
     let attempts_total = cfg.max_attempts.max(1);
     let min_chunk = cfg.min_sectors_per_read.max(1);
 
     while remaining > 0 {
-        let mut chunk_sectors = remaining.min(MAX_SECTORS_PER_XFER);
+        let mut chunk_sectors = remaining.min(max_sectors_per_xfer);
         let mut backoff_ms = cfg.initial_backoff_ms;
         let mut last_err: Option<CdReaderError> = None;
 
         for attempt in 1..=attempts_total {
-            match read_cd_audio_chunk(lba, chunk_sectors) {
+            match read_cd_chunk(lba, chunk_sectors, mode) {
                 Ok(chunk) => {
                     out.extend_from_slice(&chunk);
                     lba += chunk_sectors;
@@ -192,21 +202,35 @@ pub fn read_sectors_with_retry(
     Ok(out)
 }
 
-fn read_cd_audio_chunk(lba: u32, sectors: u32) -> Result<Vec<u8>, CdReaderError> {
+fn read_cd_chunk(lba: u32, sectors: u32, mode: &SectorReadMode) -> Result<Vec<u8>, CdReaderError> {
     let mut buf: *mut u8 = ptr::null_mut();
     let mut len: u32 = 0;
     let mut err: MacScsiError = Default::default();
-    let ok = unsafe { read_cd_audio(lba, sectors, &mut buf, &mut len, &mut err) };
+
+    let ok = match mode {
+        SectorReadMode::Audio => unsafe {
+            read_cd_audio(lba, sectors, &mut buf, &mut len, &mut err)
+        },
+        _ => unsafe {
+            read_cd_data(
+                lba,
+                sectors,
+                mode.cdb_byte1(),
+                mode.cdb_byte9(),
+                mode.sector_size() as u32,
+                &mut buf,
+                &mut len,
+                &mut err,
+            )
+        },
+    };
 
     if !ok {
         return Err(map_mac_error(err, ScsiOp::ReadCd, Some(lba), Some(sectors)));
     }
 
     let data = unsafe { slice::from_raw_parts(buf, len as usize) };
-
-    // `.to_vec()` will copy the data, so we can free it safely after
     let result = data.to_vec();
-
     unsafe { cd_free(buf as *mut _) };
 
     Ok(result)
@@ -231,37 +255,6 @@ fn map_mac_error(
     }
 
     CdReaderError::Io(std::io::Error::other("macOS CD command failed"))
-}
-
-pub(crate) fn read_data_chunk(
-    lba: u32,
-    sectors: u32,
-    mode: &crate::data_reader::SectorReadMode,
-) -> Result<Vec<u8>, CdReaderError> {
-    let mut buf: *mut u8 = ptr::null_mut();
-    let mut len: u32 = 0;
-    let mut err: MacScsiError = Default::default();
-    let ok = unsafe {
-        read_cd_data(
-            lba,
-            sectors,
-            mode.cdb_byte1(),
-            mode.cdb_byte9(),
-            mode.sector_size() as u32,
-            &mut buf,
-            &mut len,
-            &mut err,
-        )
-    };
-
-    if !ok {
-        return Err(map_mac_error(err, ScsiOp::ReadCd, Some(lba), Some(sectors)));
-    }
-
-    let data = unsafe { slice::from_raw_parts(buf, len as usize) };
-    let result = data.to_vec();
-    unsafe { cd_free(buf as *mut _) };
-    Ok(result)
 }
 
 fn next_chunk_size(current: u32, min_chunk: u32) -> u32 {

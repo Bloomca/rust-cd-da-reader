@@ -11,23 +11,20 @@ use windows_sys::Win32::Storage::IscsiDisc::{
 use windows_sys::Win32::System::IO::DeviceIoControl;
 
 use crate::windows::SptdWithSense;
+use crate::data_reader::SectorReadMode;
 use crate::{CdReaderError, RetryConfig, ScsiError, ScsiOp};
 
-// --- READ CD (0xBE): read an arbitrary LBA range as CD-DA (2352 bytes/sector) ---
-pub fn read_audio_range_with_retry(
+pub fn read_range_with_retry(
     handle: HANDLE,
     start_lba: u32,
     sectors: u32,
+    mode: &SectorReadMode,
     cfg: &RetryConfig,
 ) -> Result<Vec<u8>, CdReaderError> {
-    // SCSI-2 defines reading data in 2352 bytes chunks
-    const SECTOR_BYTES: usize = 2352;
+    let sector_size = mode.sector_size();
+    let max_sectors_per_xfer = mode.max_sectors_per_xfer();
 
-    // read ~64 KBs per request
-    const MAX_SECTORS_PER_XFER: u32 = 27; // 27 * 2352 = 63,504 bytes
-
-    let total_bytes = (sectors as usize) * SECTOR_BYTES;
-    // allocate the entire necessary size from the beginning to avoid memory realloc
+    let total_bytes = (sectors as usize) * sector_size;
     let mut out = Vec::<u8>::with_capacity(total_bytes);
 
     let mut remaining = sectors;
@@ -35,13 +32,13 @@ pub fn read_audio_range_with_retry(
     let attempts_total = cfg.max_attempts.max(1);
 
     while remaining > 0 {
-        let mut chunk_sectors = min(remaining, MAX_SECTORS_PER_XFER);
+        let mut chunk_sectors = min(remaining, max_sectors_per_xfer);
         let min_chunk = cfg.min_sectors_per_read.max(1);
         let mut backoff_ms = cfg.initial_backoff_ms;
         let mut last_err: Option<CdReaderError> = None;
 
         for attempt in 1..=attempts_total {
-            match read_cd_audio_chunk(handle, lba, chunk_sectors) {
+            match read_cd_chunk(handle, lba, chunk_sectors, mode) {
                 Ok(chunk) => {
                     out.extend_from_slice(&chunk);
                     lba += chunk_sectors;
@@ -74,13 +71,14 @@ pub fn read_audio_range_with_retry(
     Ok(out)
 }
 
-fn read_cd_audio_chunk(
+fn read_cd_chunk(
     handle: HANDLE,
     lba: u32,
     this_sectors: u32,
+    mode: &SectorReadMode,
 ) -> Result<Vec<u8>, CdReaderError> {
-    const SECTOR_BYTES: usize = 2352;
-    let mut chunk = vec![0u8; (this_sectors as usize) * SECTOR_BYTES];
+    let sector_size = mode.sector_size();
+    let mut chunk = vec![0u8; (this_sectors as usize) * sector_size];
 
     let mut wrapper: SptdWithSense = unsafe { mem::zeroed() };
     let sptd = &mut wrapper.sptd;
@@ -97,6 +95,7 @@ fn read_cd_audio_chunk(
     let cdb = &mut sptd.Cdb;
     cdb.fill(0);
     cdb[0] = 0xBE;
+    cdb[1] = mode.cdb_byte1();
     cdb[2] = ((lba >> 24) & 0xFF) as u8;
     cdb[3] = ((lba >> 16) & 0xFF) as u8;
     cdb[4] = ((lba >> 8) & 0xFF) as u8;
@@ -104,7 +103,7 @@ fn read_cd_audio_chunk(
     cdb[6] = ((this_sectors >> 16) & 0xFF) as u8;
     cdb[7] = ((this_sectors >> 8) & 0xFF) as u8;
     cdb[8] = (this_sectors & 0xFF) as u8;
-    cdb[9] = 0x10;
+    cdb[9] = mode.cdb_byte9();
 
     let mut bytes = 0u32;
     let ok = unsafe {

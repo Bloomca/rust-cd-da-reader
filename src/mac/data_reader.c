@@ -70,74 +70,59 @@ bool read_cd_data(uint32_t lba, uint32_t sectors,
         goto fail;
     }
 
-    const uint32_t MAX_SECTORS_PER_CMD = 27;
+    uint8_t cdb[12] = {0};
+    cdb[0] = 0xBE;
+    cdb[1] = cdb_byte1;
+    cdb[2] = (uint8_t)((lba >> 24) & 0xFF);
+    cdb[3] = (uint8_t)((lba >> 16) & 0xFF);
+    cdb[4] = (uint8_t)((lba >> 8) & 0xFF);
+    cdb[5] = (uint8_t)((lba >> 0) & 0xFF);
+    cdb[6] = (uint8_t)((sectors >> 16) & 0xFF);
+    cdb[7] = (uint8_t)((sectors >> 8) & 0xFF);
+    cdb[8] = (uint8_t)((sectors >> 0) & 0xFF);
+    cdb[9] = cdb_byte9;
+    cdb[10] = 0x00;
+    cdb[11] = 0x00;
 
-    uint32_t remaining = sectors;
-    uint32_t curLBA = lba;
-    uint32_t written = 0;
+    SCSITaskInterface **task = (*dev)->CreateSCSITask(dev);
+    if (!task) {
+        fprintf(stderr, "[READ_DATA] CreateSCSITask failed\n");
+        free(dst);
+        goto fail;
+    }
 
-    while (remaining > 0) {
-        uint32_t xfer = (remaining > MAX_SECTORS_PER_CMD) ? MAX_SECTORS_PER_CMD : remaining;
-        uint32_t bytes = xfer * sector_size;
+    IOVirtualRange vr = {0};
+    vr.address = (IOVirtualAddress)dst;
+    vr.length = totalBytes;
 
-        uint8_t cdb[12] = {0};
-        cdb[0] = 0xBE;
-        cdb[1] = cdb_byte1;
-        cdb[2] = (uint8_t)((curLBA >> 24) & 0xFF);
-        cdb[3] = (uint8_t)((curLBA >> 16) & 0xFF);
-        cdb[4] = (uint8_t)((curLBA >> 8) & 0xFF);
-        cdb[5] = (uint8_t)((curLBA >> 0) & 0xFF);
-        cdb[6] = (uint8_t)((xfer >> 16) & 0xFF);
-        cdb[7] = (uint8_t)((xfer >> 8) & 0xFF);
-        cdb[8] = (uint8_t)((xfer >> 0) & 0xFF);
-        cdb[9] = cdb_byte9;
-        cdb[10] = 0x00;
-        cdb[11] = 0x00;
-
-        SCSITaskInterface **task = (*dev)->CreateSCSITask(dev);
-        if (!task) {
-            fprintf(stderr, "[READ_DATA] CreateSCSITask failed\n");
-            free(dst);
-            goto fail;
-        }
-
-        IOVirtualRange vr = {0};
-        vr.address = (IOVirtualAddress)(dst + written);
-        vr.length = bytes;
-
-        if ((*task)->SetCommandDescriptorBlock(task, cdb, sizeof(cdb)) != kIOReturnSuccess) {
-            fprintf(stderr, "[READ_DATA] SetCommandDescriptorBlock failed\n");
-            (*task)->Release(task);
-            free(dst);
-            goto fail;
-        }
-
-        if ((*task)->SetScatterGatherEntries(task, &vr, 1, bytes, kSCSIDataTransfer_FromTargetToInitiator) != kIOReturnSuccess) {
-            fprintf(stderr, "[READ_DATA] SetScatterGatherEntries failed\n");
-            (*task)->Release(task);
-            free(dst);
-            goto fail;
-        }
-
-        SCSI_Sense_Data sense = {0};
-        SCSITaskStatus status = kSCSITaskStatus_No_Status;
-        kern_return_t ex = (*task)->ExecuteTaskSync(task, &sense, &status, NULL);
+    if ((*task)->SetCommandDescriptorBlock(task, cdb, sizeof(cdb)) != kIOReturnSuccess) {
+        fprintf(stderr, "[READ_DATA] SetCommandDescriptorBlock failed\n");
         (*task)->Release(task);
+        free(dst);
+        goto fail;
+    }
 
-        if (ex != kIOReturnSuccess || status != kSCSITaskStatus_GOOD) {
-            fill_data_scsi_error(outErr, ex, status, &sense);
-            fprintf(stderr, "[READ_DATA] ExecuteTaskSync failed (ex=0x%x, status=%u)\n", ex, status);
-            free(dst);
-            goto fail;
-        }
+    if ((*task)->SetScatterGatherEntries(task, &vr, 1, totalBytes, kSCSIDataTransfer_FromTargetToInitiator) != kIOReturnSuccess) {
+        fprintf(stderr, "[READ_DATA] SetScatterGatherEntries failed\n");
+        (*task)->Release(task);
+        free(dst);
+        goto fail;
+    }
 
-        written += bytes;
-        curLBA += xfer;
-        remaining -= xfer;
+    SCSI_Sense_Data sense = {0};
+    SCSITaskStatus status = kSCSITaskStatus_No_Status;
+    kern_return_t ex = (*task)->ExecuteTaskSync(task, &sense, &status, NULL);
+    (*task)->Release(task);
+
+    if (ex != kIOReturnSuccess || status != kSCSITaskStatus_GOOD) {
+        fill_data_scsi_error(outErr, ex, status, &sense);
+        fprintf(stderr, "[READ_DATA] ExecuteTaskSync failed (ex=0x%x, status=%u)\n", ex, status);
+        free(dst);
+        goto fail;
     }
 
     *outBuf = dst;
-    *outLen = written;
+    *outLen = totalBytes;
 
     return true;
 
