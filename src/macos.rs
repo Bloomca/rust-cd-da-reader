@@ -3,9 +3,9 @@ use std::io;
 use std::{ptr, slice};
 use std::{thread::sleep, time::Duration};
 
+use crate::data_reader::SectorReadMode;
 use crate::parse_toc::parse_toc;
 use crate::utils::get_track_bounds;
-use crate::data_reader::SectorReadMode;
 use crate::{CdReaderError, DriveInfo, RetryConfig, ScsiError, ScsiOp, Toc};
 
 #[repr(C)]

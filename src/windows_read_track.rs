@@ -10,8 +10,8 @@ use windows_sys::Win32::Storage::IscsiDisc::{
 };
 use windows_sys::Win32::System::IO::DeviceIoControl;
 
-use crate::windows::SptdWithSense;
 use crate::data_reader::SectorReadMode;
+use crate::windows::SptdWithSense;
 use crate::{CdReaderError, RetryConfig, ScsiError, ScsiOp};
 
 pub fn read_range_with_retry(

@@ -275,7 +275,11 @@ pub fn read_sectors_with_mode(
     Ok(out)
 }
 
-fn read_cd_chunk(lba: u32, this_sectors: u32, mode: &SectorReadMode) -> std::result::Result<Vec<u8>, CdReaderError> {
+fn read_cd_chunk(
+    lba: u32,
+    this_sectors: u32,
+    mode: &SectorReadMode,
+) -> std::result::Result<Vec<u8>, CdReaderError> {
     let sector_size = mode.sector_size();
     let mut chunk = vec![0u8; (this_sectors as usize) * sector_size];
     let mut sense = vec![0u8; 64];
