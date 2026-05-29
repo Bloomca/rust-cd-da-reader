@@ -1,7 +1,6 @@
 use std::ffi::{CStr, CString};
 use std::io;
 use std::{ptr, slice};
-use std::{thread::sleep, time::Duration};
 
 use crate::data_reader::SectorReadMode;
 use crate::parse_toc::parse_toc;
@@ -32,19 +31,10 @@ struct MacDriveInfo {
 #[link(name = "macos_cd_shim", kind = "static")]
 unsafe extern "C" {
     fn cd_read_toc(out_buf: *mut *mut u8, out_len: *mut u32, out_err: *mut MacScsiError) -> bool;
-    fn read_cd_audio(
+    fn read_cd_sectors(
         lba: u32,
         sectors: u32,
-        out_buf: *mut *mut u8,
-        out_len: *mut u32,
-        out_err: *mut MacScsiError,
-    ) -> bool;
-    fn read_cd_data(
-        lba: u32,
-        sectors: u32,
-        cdb_byte1: u8,
-        cdb_byte9: u8,
-        sector_size: u32,
+        mode_id: u32,
         out_buf: *mut *mut u8,
         out_len: *mut u32,
         out_err: *mut MacScsiError,
@@ -153,53 +143,9 @@ pub fn read_sectors_with_mode(
     mode: &SectorReadMode,
     cfg: &RetryConfig,
 ) -> Result<Vec<u8>, CdReaderError> {
-    let sector_size = mode.sector_size();
-    let max_sectors_per_xfer = mode.max_sectors_per_xfer();
-
-    let mut out = Vec::<u8>::with_capacity((sectors as usize) * sector_size);
-    let mut remaining = sectors;
-    let mut lba = start_lba;
-    let attempts_total = cfg.max_attempts.max(1);
-    let min_chunk = cfg.min_sectors_per_read.max(1);
-
-    while remaining > 0 {
-        let mut chunk_sectors = remaining.min(max_sectors_per_xfer);
-        let mut backoff_ms = cfg.initial_backoff_ms;
-        let mut last_err: Option<CdReaderError> = None;
-
-        for attempt in 1..=attempts_total {
-            match read_cd_chunk(lba, chunk_sectors, mode) {
-                Ok(chunk) => {
-                    out.extend_from_slice(&chunk);
-                    lba += chunk_sectors;
-                    remaining -= chunk_sectors;
-                    last_err = None;
-                    break;
-                }
-                Err(err) => {
-                    last_err = Some(err);
-                    if attempt == attempts_total {
-                        break;
-                    }
-                    if cfg.reduce_chunk_on_retry && chunk_sectors > min_chunk {
-                        chunk_sectors = next_chunk_size(chunk_sectors, min_chunk);
-                    }
-                    if backoff_ms > 0 {
-                        sleep(Duration::from_millis(backoff_ms));
-                    }
-                    if cfg.max_backoff_ms > 0 {
-                        backoff_ms = (backoff_ms.saturating_mul(2)).min(cfg.max_backoff_ms);
-                    }
-                }
-            }
-        }
-
-        if let Some(err) = last_err {
-            return Err(err);
-        }
-    }
-
-    Ok(out)
+    crate::read_loop::read_sectors_chunked(start_lba, sectors, mode, cfg, |lba, chunk_sectors| {
+        read_cd_chunk(lba, chunk_sectors, mode)
+    })
 }
 
 fn read_cd_chunk(lba: u32, sectors: u32, mode: &SectorReadMode) -> Result<Vec<u8>, CdReaderError> {
@@ -207,23 +153,15 @@ fn read_cd_chunk(lba: u32, sectors: u32, mode: &SectorReadMode) -> Result<Vec<u8
     let mut len: u32 = 0;
     let mut err: MacScsiError = Default::default();
 
-    let ok = match mode {
-        SectorReadMode::Audio => unsafe {
-            read_cd_audio(lba, sectors, &mut buf, &mut len, &mut err)
-        },
-        _ => unsafe {
-            read_cd_data(
-                lba,
-                sectors,
-                mode.cdb_byte1(),
-                mode.cdb_byte9(),
-                mode.sector_size() as u32,
-                &mut buf,
-                &mut len,
-                &mut err,
-            )
-        },
+    // Discriminant understood by `read_cd_sectors`, which maps it to the
+    // matching macOS CD sector area/type for DKIOCCDREAD.
+    let mode_id: u32 = match mode {
+        SectorReadMode::Audio => 0,
+        SectorReadMode::DataCooked => 1,
+        SectorReadMode::DataRaw => 2,
     };
+
+    let ok = unsafe { read_cd_sectors(lba, sectors, mode_id, &mut buf, &mut len, &mut err) };
 
     if !ok {
         return Err(map_mac_error(err, ScsiOp::ReadCd, Some(lba), Some(sectors)));
@@ -255,12 +193,4 @@ fn map_mac_error(
     }
 
     CdReaderError::Io(std::io::Error::other("macOS CD command failed"))
-}
-
-fn next_chunk_size(current: u32, min_chunk: u32) -> u32 {
-    if current > 8 {
-        8.max(min_chunk)
-    } else {
-        min_chunk
-    }
 }

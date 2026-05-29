@@ -153,6 +153,7 @@ mod windows;
 pub mod data_reader;
 mod discovery;
 mod errors;
+mod read_loop;
 mod retry;
 mod stream;
 mod utils;

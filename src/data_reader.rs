@@ -43,10 +43,21 @@ impl SectorReadMode {
         }
     }
 
+    /// Maximum sectors per single `READ CD` command.
+    ///
+    /// This is the sole chunker for the blocking `read_track` /
+    /// `read_data_sectors` paths, which hand a whole track (tens of thousands
+    /// of sectors) straight to the read loop; the streaming API already limits
+    /// itself via `TrackStreamConfig::sectors_per_chunk`. The cap is not about
+    /// OS pass-through limits (modern SG_IO/SPTI handle far larger transfers)
+    /// but about optical-drive firmware and USB-bridge reliability: large
+    /// multi-sector `READ CD` requests are flaky across the zoo of drives. The
+    /// values keep each transfer around 64 KiB, matching the conventional
+    /// ~27-sector chunk used by cdparanoia/libcdio.
     pub(crate) fn max_sectors_per_xfer(&self) -> u32 {
         match self.sector_size() {
-            2048 => 32,
-            _ => 27,
+            2048 => 32, // 32 * 2048 = 64 KiB
+            _ => 27,    // 27 * 2352 ≈ 62 KiB
         }
     }
 }
