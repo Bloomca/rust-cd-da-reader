@@ -41,8 +41,11 @@ struct SgIoHeader {
     info: u32,
 }
 
-// _IOWR('S', 0x85, struct sg_io_hdr)
-const SG_IO: u64 = 0x2285;
+// _IOWR('S', 0x85, struct sg_io_hdr). Typed as `c_ulong` to match the
+// `request` parameter of `libc::ioctl` on every target: it is 64-bit on
+// x86_64/aarch64 but 32-bit on armv7 (MiSTer / Cortex-A9), where a `u64`
+// constant fails to compile (E0308). The value fits in 32 bits.
+const SG_IO: libc::c_ulong = 0x2285;
 
 static mut DRIVE_HANDLE: Option<File> = None;
 
