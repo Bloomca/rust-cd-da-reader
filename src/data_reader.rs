@@ -8,10 +8,10 @@ pub enum SectorReadMode {
     /// CDB byte 1 = 0x00 (any type), byte 9 = 0x10 (user data).
     Audio,
     /// Data cooked: 2048 bytes/sector, user data only (no sync/header/EDC/ECC).
-    /// CDB byte 1 = 0x04 (Mode 1), byte 9 = 0x10 (user data).
+    /// CDB byte 1 = 0x08 (Mode 1), byte 9 = 0x10 (user data).
     DataCooked,
     /// Data raw: 2352 bytes/sector with sync + header + user data + EDC/ECC.
-    /// CDB byte 1 = 0x04 (Mode 1), byte 9 = 0xF8 (sync + header + user data + EDC/ECC).
+    /// CDB byte 1 = 0x08 (Mode 1), byte 9 = 0xF8 (sync + header + user data + EDC/ECC).
     DataRaw,
 }
 
@@ -25,12 +25,15 @@ impl SectorReadMode {
         }
     }
 
-    /// CDB byte 1: Expected Sector Type field (bits 5-2).
+    /// CDB byte 1: Expected Sector Type field (bits 4-2).
+    ///
+    /// Per SCSI MMC, the type value is shifted left by 2: Mode 1 is
+    /// `010b << 2 = 0x08`. (`0x04` would be `001b << 2`, i.e. CD-DA.)
     pub fn cdb_byte1(&self) -> u8 {
         match self {
             SectorReadMode::Audio => 0x00,
-            SectorReadMode::DataCooked => 0x04,
-            SectorReadMode::DataRaw => 0x04,
+            SectorReadMode::DataCooked => 0x08,
+            SectorReadMode::DataRaw => 0x08,
         }
     }
 
@@ -59,5 +62,34 @@ impl SectorReadMode {
             2048 => 32, // 32 * 2048 = 64 KiB
             _ => 27,    // 27 * 2352 ≈ 62 KiB
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SectorReadMode;
+
+    #[test]
+    fn cdb_byte1_encodes_expected_sector_type() {
+        // Expected Sector Type lives in CDB byte 1, bits 4-2 (value << 2).
+        // Audio leaves it 0 (any type) and relies on byte 9; data reads must
+        // select Mode 1 = 010b << 2 = 0x08 (0x04 would wrongly mean CD-DA).
+        assert_eq!(SectorReadMode::Audio.cdb_byte1(), 0x00);
+        assert_eq!(SectorReadMode::DataCooked.cdb_byte1(), 0x08);
+        assert_eq!(SectorReadMode::DataRaw.cdb_byte1(), 0x08);
+    }
+
+    #[test]
+    fn cdb_byte9_selects_main_channel() {
+        assert_eq!(SectorReadMode::Audio.cdb_byte9(), 0x10);
+        assert_eq!(SectorReadMode::DataCooked.cdb_byte9(), 0x10);
+        assert_eq!(SectorReadMode::DataRaw.cdb_byte9(), 0xF8);
+    }
+
+    #[test]
+    fn sector_size_matches_mode() {
+        assert_eq!(SectorReadMode::Audio.sector_size(), 2352);
+        assert_eq!(SectorReadMode::DataCooked.sector_size(), 2048);
+        assert_eq!(SectorReadMode::DataRaw.sector_size(), 2352);
     }
 }
