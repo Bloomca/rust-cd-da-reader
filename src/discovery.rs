@@ -20,7 +20,7 @@ impl CdReader {
     /// inspects their TOC property without claiming exclusive access.
     #[cfg(target_os = "macos")]
     pub fn list_drives() -> Result<Vec<DriveInfo>, CdReaderError> {
-        crate::macos::list_drives().map_err(CdReaderError::Io)
+        crate::platform::list_drives().map_err(CdReaderError::Io)
     }
 
     /// Enumerate candidate optical drives and probe whether they currently have an audio CD.
