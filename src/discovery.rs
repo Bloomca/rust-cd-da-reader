@@ -32,7 +32,7 @@ impl CdReader {
         let mut paths = {
             #[cfg(target_os = "windows")]
             {
-                crate::windows::list_drive_paths().map_err(CdReaderError::Io)?
+                crate::platform::list_drive_paths().map_err(CdReaderError::Io)?
             }
 
             #[cfg(target_os = "linux")]
