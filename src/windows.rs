@@ -10,16 +10,16 @@ use windows_sys::Win32::Storage::IscsiDisc::{
 };
 use windows_sys::Win32::System::IO::DeviceIoControl;
 
-use crate::data_reader::SectorReadMode;
-use crate::{CdReaderError, RetryConfig, ScsiError, ScsiOp, Toc, parse_toc, windows_read_track};
+use crate::data_reader::{SectorReadMode, build_read_cd_cdb};
+use crate::{CdReaderError, ScsiError, ScsiOp, Toc, parse_toc};
 
 use std::mem;
 use std::ptr;
 
 #[repr(C)]
-pub struct SptdWithSense {
-    pub sptd: SCSI_PASS_THROUGH_DIRECT,
-    pub sense: [u8; 32],
+struct SptdWithSense {
+    sptd: SCSI_PASS_THROUGH_DIRECT,
+    sense: [u8; 32],
 }
 
 static mut DRIVE_HANDLE: Option<HANDLE> = None;
@@ -161,36 +161,64 @@ pub fn read_toc() -> Result<Toc, CdReaderError> {
     parse_toc::parse_toc(data).map_err(|err| CdReaderError::Parse(err.to_string()))
 }
 
-pub fn read_track_with_retry(
-    toc: &Toc,
-    track_no: u8,
-    cfg: &RetryConfig,
-) -> Result<Vec<u8>, CdReaderError> {
-    let (start_lba, sectors) =
-        crate::utils::get_track_bounds(toc, track_no).map_err(CdReaderError::Io)?;
-    read_sectors_with_retry(start_lba, sectors, cfg)
-}
-
-pub fn read_sectors_with_retry(
-    start_lba: u32,
+pub(crate) fn read_cd_chunk(
+    lba: u32,
     sectors: u32,
-    cfg: &RetryConfig,
-) -> Result<Vec<u8>, CdReaderError> {
-    read_sectors_with_mode(start_lba, sectors, &SectorReadMode::Audio, cfg)
-}
-
-pub fn read_sectors_with_mode(
-    start_lba: u32,
-    sectors: u32,
-    mode: &SectorReadMode,
-    cfg: &RetryConfig,
+    mode: SectorReadMode,
 ) -> Result<Vec<u8>, CdReaderError> {
     let handle = unsafe {
         DRIVE_HANDLE
             .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Drive not opened"))
             .map_err(CdReaderError::Io)?
     };
-    windows_read_track::read_range_with_retry(handle, start_lba, sectors, mode, cfg)
+
+    let mut chunk = vec![0u8; sectors as usize * mode.sector_size()];
+    let mut wrapper: SptdWithSense = unsafe { mem::zeroed() };
+    let sptd = &mut wrapper.sptd;
+
+    sptd.Length = size_of::<SCSI_PASS_THROUGH_DIRECT>() as u16;
+    sptd.CdbLength = 12;
+    sptd.DataIn = SCSI_IOCTL_DATA_IN as u8;
+    sptd.TimeOutValue = 30;
+    sptd.DataTransferLength = chunk.len() as u32;
+    sptd.DataBuffer = chunk.as_mut_ptr() as *mut _;
+    sptd.SenseInfoLength = wrapper.sense.len() as u8;
+    sptd.SenseInfoOffset = size_of::<SCSI_PASS_THROUGH_DIRECT>() as u32;
+    let cdb = build_read_cd_cdb(lba, sectors, mode);
+    sptd.Cdb[..cdb.len()].copy_from_slice(&cdb);
+
+    let mut bytes = 0u32;
+    let ok = unsafe {
+        DeviceIoControl(
+            handle,
+            IOCTL_SCSI_PASS_THROUGH_DIRECT,
+            &mut wrapper as *mut _ as *mut _,
+            size_of::<SptdWithSense>() as u32,
+            &mut wrapper as *mut _ as *mut _,
+            size_of::<SptdWithSense>() as u32,
+            &mut bytes as *mut u32,
+            ptr::null_mut(),
+        )
+    };
+
+    if ok == 0 {
+        return Err(CdReaderError::Io(std::io::Error::last_os_error()));
+    }
+    if wrapper.sptd.ScsiStatus != 0 {
+        let (sense_key, asc, ascq) = parse_sense(&wrapper.sense, wrapper.sptd.SenseInfoLength);
+        return Err(CdReaderError::Scsi(ScsiError {
+            op: ScsiOp::ReadCd,
+            lba: Some(lba),
+            sectors: Some(sectors),
+            scsi_status: wrapper.sptd.ScsiStatus,
+            sense_key,
+            asc,
+            ascq,
+        }));
+    }
+
+    chunk.truncate(wrapper.sptd.DataTransferLength as usize);
+    Ok(chunk)
 }
 
 fn parse_sense(sense: &[u8], sense_len: u8) -> (Option<u8>, Option<u8>, Option<u8>) {

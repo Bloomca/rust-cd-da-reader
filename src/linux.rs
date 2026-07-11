@@ -6,10 +6,9 @@ use std::os::fd::{AsRawFd, FromRawFd};
 use std::path::Path;
 
 use crate::Toc;
-use crate::data_reader::SectorReadMode;
+use crate::data_reader::{SectorReadMode, build_read_cd_cdb};
 use crate::parse_toc::parse_toc;
-use crate::utils::get_track_bounds;
-use crate::{CdReaderError, RetryConfig, ScsiError, ScsiOp};
+use crate::{CdReaderError, ScsiError, ScsiOp};
 
 const SG_INFO_CHECK: u32 = 0x1;
 const SG_DXFER_FROM_DEV: i32 = -3;
@@ -192,54 +191,16 @@ pub fn read_toc() -> std::result::Result<Toc, CdReaderError> {
     parse_toc(data).map_err(|err| CdReaderError::Parse(err.to_string()))
 }
 
-pub fn read_track_with_retry(
-    toc: &Toc,
-    track_no: u8,
-    cfg: &RetryConfig,
-) -> std::result::Result<Vec<u8>, CdReaderError> {
-    let (start_lba, sectors) = get_track_bounds(toc, track_no).map_err(CdReaderError::Io)?;
-    read_sectors_with_retry(start_lba, sectors, cfg)
-}
-
-pub fn read_sectors_with_retry(
-    start_lba: u32,
-    sectors: u32,
-    cfg: &RetryConfig,
-) -> std::result::Result<Vec<u8>, CdReaderError> {
-    read_sectors_with_mode(start_lba, sectors, &SectorReadMode::Audio, cfg)
-}
-
-pub fn read_sectors_with_mode(
-    start_lba: u32,
-    sectors: u32,
-    mode: &SectorReadMode,
-    cfg: &RetryConfig,
-) -> std::result::Result<Vec<u8>, CdReaderError> {
-    crate::read_loop::read_sectors_chunked(start_lba, sectors, mode, cfg, |lba, chunk_sectors| {
-        read_cd_chunk(lba, chunk_sectors, mode)
-    })
-}
-
-fn read_cd_chunk(
+pub(crate) fn read_cd_chunk(
     lba: u32,
     this_sectors: u32,
-    mode: &SectorReadMode,
+    mode: SectorReadMode,
 ) -> std::result::Result<Vec<u8>, CdReaderError> {
     let sector_size = mode.sector_size();
     let mut chunk = vec![0u8; (this_sectors as usize) * sector_size];
     let mut sense = vec![0u8; 64];
 
-    let mut cdb = [0u8; 12];
-    cdb[0] = 0xBE; // READ CD
-    cdb[1] = mode.cdb_byte1();
-    cdb[2] = ((lba >> 24) & 0xFF) as u8;
-    cdb[3] = ((lba >> 16) & 0xFF) as u8;
-    cdb[4] = ((lba >> 8) & 0xFF) as u8;
-    cdb[5] = (lba & 0xFF) as u8;
-    cdb[6] = ((this_sectors >> 16) & 0xFF) as u8;
-    cdb[7] = ((this_sectors >> 8) & 0xFF) as u8;
-    cdb[8] = (this_sectors & 0xFF) as u8;
-    cdb[9] = mode.cdb_byte9();
+    let mut cdb = build_read_cd_cdb(lba, this_sectors, mode);
 
     let mut hdr = SgIoHeader {
         interface_id: 'S' as i32,

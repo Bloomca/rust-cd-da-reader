@@ -165,9 +165,6 @@ pub use stream::{TrackStream, TrackStreamConfig};
 
 mod parse_toc;
 
-#[cfg(target_os = "windows")]
-mod windows_read_track;
-
 /// Representation of the track from TOC, purely in terms of data location on the CD.
 #[derive(Debug)]
 pub struct Track {
@@ -303,25 +300,9 @@ impl CdReader {
         track_no: u8,
         cfg: &RetryConfig,
     ) -> Result<Vec<u8>, CdReaderError> {
-        #[cfg(target_os = "windows")]
-        {
-            windows::read_track_with_retry(toc, track_no, cfg)
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            macos::read_track_with_retry(toc, track_no, cfg)
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            linux::read_track_with_retry(toc, track_no, cfg)
-        }
-
-        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-        {
-            compile_error!("Unsupported platform")
-        }
+        let (start_lba, sectors) =
+            utils::get_track_bounds(toc, track_no).map_err(CdReaderError::Io)?;
+        self.read_sector_range_with_retry(start_lba, sectors, SectorReadMode::Audio, cfg)
     }
 
     /// Read sectors in a specific mode (audio, data cooked, or data raw).
@@ -336,62 +317,37 @@ impl CdReader {
         mode: SectorReadMode,
         cfg: &RetryConfig,
     ) -> Result<Vec<u8>, CdReaderError> {
-        self.read_sectors_with_mode(lba, count, &mode, cfg)
+        self.read_sector_range_with_retry(lba, count, mode, cfg)
     }
 
-    pub(crate) fn read_sectors_with_mode(
+    pub(crate) fn read_sector_range_with_retry(
         &self,
         start_lba: u32,
         sectors: u32,
-        mode: &SectorReadMode,
+        mode: SectorReadMode,
         cfg: &RetryConfig,
     ) -> Result<Vec<u8>, CdReaderError> {
-        #[cfg(target_os = "windows")]
-        {
-            windows::read_sectors_with_mode(start_lba, sectors, mode, cfg)
-        }
+        read_loop::read_sectors_chunked(start_lba, sectors, mode, cfg, |lba, chunk_sectors| {
+            #[cfg(target_os = "windows")]
+            {
+                windows::read_cd_chunk(lba, chunk_sectors, mode)
+            }
 
-        #[cfg(target_os = "macos")]
-        {
-            macos::read_sectors_with_mode(start_lba, sectors, mode, cfg)
-        }
+            #[cfg(target_os = "macos")]
+            {
+                macos::read_cd_chunk(lba, chunk_sectors, mode)
+            }
 
-        #[cfg(target_os = "linux")]
-        {
-            linux::read_sectors_with_mode(start_lba, sectors, mode, cfg)
-        }
+            #[cfg(target_os = "linux")]
+            {
+                linux::read_cd_chunk(lba, chunk_sectors, mode)
+            }
 
-        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-        {
-            compile_error!("Unsupported platform")
-        }
-    }
-
-    pub(crate) fn read_sectors_with_retry(
-        &self,
-        start_lba: u32,
-        sectors: u32,
-        cfg: &RetryConfig,
-    ) -> Result<Vec<u8>, CdReaderError> {
-        #[cfg(target_os = "windows")]
-        {
-            windows::read_sectors_with_retry(start_lba, sectors, cfg)
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            macos::read_sectors_with_retry(start_lba, sectors, cfg)
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            linux::read_sectors_with_retry(start_lba, sectors, cfg)
-        }
-
-        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-        {
-            compile_error!("Unsupported platform")
-        }
+            #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+            {
+                compile_error!("Unsupported platform")
+            }
+        })
     }
 }
 

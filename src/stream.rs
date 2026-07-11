@@ -1,6 +1,6 @@
 use std::cmp::min;
 
-use crate::{CdReader, CdReaderError, RetryConfig, Toc, utils};
+use crate::{CdReader, CdReaderError, RetryConfig, SectorReadMode, Toc, utils};
 
 /// Configuration for streamed track reads.
 #[derive(Debug, Clone)]
@@ -46,7 +46,8 @@ impl<'a> TrackStream<'a> {
     /// Returns `Ok(None)` when end-of-track is reached.
     pub fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, CdReaderError> {
         self.next_chunk_with(|lba, sectors, retry| {
-            self.reader.read_sectors_with_retry(lba, sectors, retry)
+            self.reader
+                .read_sector_range_with_retry(lba, sectors, SectorReadMode::Audio, retry)
         })
     }
 

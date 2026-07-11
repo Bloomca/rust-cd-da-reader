@@ -65,9 +65,23 @@ impl SectorReadMode {
     }
 }
 
+/// Build a READ CD (0xBE) command descriptor block for Linux and Windows.
+#[cfg(any(target_os = "linux", target_os = "windows", test))]
+pub(crate) fn build_read_cd_cdb(lba: u32, sectors: u32, mode: SectorReadMode) -> [u8; 12] {
+    let mut cdb = [0u8; 12];
+    cdb[0] = 0xBE;
+    cdb[1] = mode.cdb_byte1();
+    cdb[2..6].copy_from_slice(&lba.to_be_bytes());
+    cdb[6] = ((sectors >> 16) & 0xFF) as u8;
+    cdb[7] = ((sectors >> 8) & 0xFF) as u8;
+    cdb[8] = (sectors & 0xFF) as u8;
+    cdb[9] = mode.cdb_byte9();
+    cdb
+}
+
 #[cfg(test)]
 mod tests {
-    use super::SectorReadMode;
+    use super::{SectorReadMode, build_read_cd_cdb};
 
     #[test]
     fn cdb_byte1_encodes_expected_sector_type() {
@@ -91,5 +105,15 @@ mod tests {
         assert_eq!(SectorReadMode::Audio.sector_size(), 2352);
         assert_eq!(SectorReadMode::DataCooked.sector_size(), 2048);
         assert_eq!(SectorReadMode::DataRaw.sector_size(), 2352);
+    }
+
+    #[test]
+    fn builds_read_cd_cdb() {
+        assert_eq!(
+            build_read_cd_cdb(0x1234_5678, 0x0000_ABCD, SectorReadMode::DataRaw),
+            [
+                0xBE, 0x08, 0x12, 0x34, 0x56, 0x78, 0x00, 0xAB, 0xCD, 0xF8, 0x00, 0x00,
+            ]
+        );
     }
 }
