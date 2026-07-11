@@ -37,7 +37,7 @@ impl CdReader {
 
             #[cfg(target_os = "linux")]
             {
-                crate::linux::list_drive_paths().map_err(CdReaderError::Io)?
+                crate::platform::list_drive_paths().map_err(CdReaderError::Io)?
             }
 
             #[cfg(not(any(target_os = "windows", target_os = "linux")))]
