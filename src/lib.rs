@@ -216,28 +216,8 @@ impl CdReader {
     ///
     /// Returns an error if the drive cannot be opened
     pub fn open(path: &str) -> std::io::Result<Self> {
-        #[cfg(target_os = "windows")]
-        {
-            platform::open_drive(path)?;
-            Ok(Self {})
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            platform::open_drive(path)?;
-            Ok(Self {})
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            platform::open_drive(path)?;
-            Ok(Self {})
-        }
-
-        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-        {
-            compile_error!("Unsupported platform")
-        }
+        platform::open_drive(path)?;
+        Ok(Self {})
     }
 
     /// While this is a low-level library and does not include any codecs to compress the audio,
@@ -259,25 +239,7 @@ impl CdReader {
     /// when calling `read_track`, as it doesn't start with 0. It is important to do so,
     /// because in the future it might include 0 for the hidden track.
     pub fn read_toc(&self) -> Result<Toc, CdReaderError> {
-        #[cfg(target_os = "windows")]
-        {
-            platform::read_toc()
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            platform::read_toc()
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            platform::read_toc()
-        }
-
-        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-        {
-            compile_error!("Unsupported platform")
-        }
+        platform::read_toc()
     }
 
     /// Read raw data for the specified track number from the TOC.
@@ -323,44 +285,13 @@ impl CdReader {
         cfg: &RetryConfig,
     ) -> Result<Vec<u8>, CdReaderError> {
         read_loop::read_sectors_chunked(start_lba, sectors, mode, cfg, |lba, chunk_sectors| {
-            #[cfg(target_os = "windows")]
-            {
-                platform::read_cd_chunk(lba, chunk_sectors, mode)
-            }
-
-            #[cfg(target_os = "macos")]
-            {
-                platform::read_cd_chunk(lba, chunk_sectors, mode)
-            }
-
-            #[cfg(target_os = "linux")]
-            {
-                platform::read_cd_chunk(lba, chunk_sectors, mode)
-            }
-
-            #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-            {
-                compile_error!("Unsupported platform")
-            }
+            platform::read_cd_chunk(lba, chunk_sectors, mode)
         })
     }
 }
 
 impl Drop for CdReader {
     fn drop(&mut self) {
-        #[cfg(target_os = "windows")]
-        {
-            platform::close_drive();
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            platform::close_drive();
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            platform::close_drive();
-        }
+        platform::close_drive();
     }
 }
