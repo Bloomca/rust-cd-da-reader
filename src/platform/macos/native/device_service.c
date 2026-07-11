@@ -32,6 +32,11 @@ Boolean open_dev_session(const char *bsdName) {
         return false;
     }
 
+    // Do not replace the device used by an existing session.
+    if (globalBsdName[0] != '\0') {
+        return strcmp(globalBsdName, bsdName) == 0;
+    }
+
     snprintf(globalBsdName, sizeof(globalBsdName), "%s", bsdName);
 
     int fd = open_cd_raw_device();
