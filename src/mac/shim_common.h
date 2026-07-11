@@ -37,7 +37,7 @@ typedef struct {
 extern char globalBsdName[64];
 
 bool cd_read_toc(uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr);
-bool read_cd_audio(uint32_t lba, uint32_t sectors, uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr);
+bool read_cd_sectors(uint32_t lba, uint32_t sectors, uint32_t mode_id, uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr);
 void cd_free(void *p);
 
 bool list_cd_drives(CdDriveInfo **outDrives, uint32_t *outCount);

@@ -22,16 +22,25 @@ int open_cd_raw_device(void) {
     return open(path, O_RDONLY | O_NONBLOCK);
 }
 
+// Reading the TOC and sector data both go through the read-only
+// DKIOCCDREAD/DKIOCCDREADTOC ioctls on the raw BSD device, so opening a
+// "session" is just remembering which device to open. This avoids the
+// SCSITaskDeviceInterface path, which requires exclusive access and forces
+// the volume to unmount. We validate the name by opening the raw device once.
 Boolean open_dev_session(const char *bsdName) {
     if (!bsdName || bsdName[0] == '\0') {
         return false;
     }
 
-    if (globalBsdName[0] != '\0') {
-        return strcmp(globalBsdName, bsdName) == 0;
-    }
-
     snprintf(globalBsdName, sizeof(globalBsdName), "%s", bsdName);
+
+    int fd = open_cd_raw_device();
+    if (fd < 0) {
+        globalBsdName[0] = '\0';
+        return false;
+    }
+    close(fd);
+
     return true;
 }
 

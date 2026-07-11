@@ -150,11 +150,14 @@ mod macos;
 #[cfg(target_os = "windows")]
 mod windows;
 
+pub mod data_reader;
 mod discovery;
 mod errors;
+mod read_loop;
 mod retry;
 mod stream;
 mod utils;
+pub use data_reader::SectorReadMode;
 pub use discovery::DriveInfo;
 pub use errors::{CdReaderError, ScsiError, ScsiOp};
 pub use retry::RetryConfig;
@@ -313,6 +316,49 @@ impl CdReader {
         #[cfg(target_os = "linux")]
         {
             linux::read_track_with_retry(toc, track_no, cfg)
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+        {
+            compile_error!("Unsupported platform")
+        }
+    }
+
+    /// Read sectors in a specific mode (audio, data cooked, or data raw).
+    ///
+    /// This uses the READ CD (0xBE) SCSI command with configurable sector type
+    /// and main channel flags, supporting audio, cooked data (2048 B/sector),
+    /// and raw data (2352 B/sector) reads.
+    pub fn read_data_sectors(
+        &self,
+        lba: u32,
+        count: u32,
+        mode: SectorReadMode,
+        cfg: &RetryConfig,
+    ) -> Result<Vec<u8>, CdReaderError> {
+        self.read_sectors_with_mode(lba, count, &mode, cfg)
+    }
+
+    pub(crate) fn read_sectors_with_mode(
+        &self,
+        start_lba: u32,
+        sectors: u32,
+        mode: &SectorReadMode,
+        cfg: &RetryConfig,
+    ) -> Result<Vec<u8>, CdReaderError> {
+        #[cfg(target_os = "windows")]
+        {
+            windows::read_sectors_with_mode(start_lba, sectors, mode, cfg)
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            macos::read_sectors_with_mode(start_lba, sectors, mode, cfg)
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            linux::read_sectors_with_mode(start_lba, sectors, mode, cfg)
         }
 
         #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]

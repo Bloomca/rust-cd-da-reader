@@ -10,6 +10,7 @@ use windows_sys::Win32::Storage::IscsiDisc::{
 };
 use windows_sys::Win32::System::IO::DeviceIoControl;
 
+use crate::data_reader::SectorReadMode;
 use crate::{CdReaderError, RetryConfig, ScsiError, ScsiOp, Toc, parse_toc, windows_read_track};
 
 use std::mem;
@@ -175,12 +176,21 @@ pub fn read_sectors_with_retry(
     sectors: u32,
     cfg: &RetryConfig,
 ) -> Result<Vec<u8>, CdReaderError> {
+    read_sectors_with_mode(start_lba, sectors, &SectorReadMode::Audio, cfg)
+}
+
+pub fn read_sectors_with_mode(
+    start_lba: u32,
+    sectors: u32,
+    mode: &SectorReadMode,
+    cfg: &RetryConfig,
+) -> Result<Vec<u8>, CdReaderError> {
     let handle = unsafe {
         DRIVE_HANDLE
             .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Drive not opened"))
             .map_err(CdReaderError::Io)?
     };
-    windows_read_track::read_audio_range_with_retry(handle, start_lba, sectors, cfg)
+    windows_read_track::read_range_with_retry(handle, start_lba, sectors, mode, cfg)
 }
 
 fn parse_sense(sense: &[u8], sense_len: u8) -> (Option<u8>, Option<u8>, Option<u8>) {
