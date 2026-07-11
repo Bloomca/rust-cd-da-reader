@@ -4,8 +4,7 @@ use std::{ptr, slice};
 
 use crate::data_reader::SectorReadMode;
 use crate::parse_toc::parse_toc;
-use crate::utils::get_track_bounds;
-use crate::{CdReaderError, DriveInfo, RetryConfig, ScsiError, ScsiOp, Toc};
+use crate::{CdReaderError, DriveInfo, ScsiError, ScsiOp, Toc};
 
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy)]
@@ -120,35 +119,11 @@ pub fn read_toc() -> Result<Toc, CdReaderError> {
     result
 }
 
-pub fn read_track_with_retry(
-    toc: &Toc,
-    track_no: u8,
-    cfg: &RetryConfig,
-) -> Result<Vec<u8>, CdReaderError> {
-    let (start_lba, sectors) = get_track_bounds(toc, track_no).map_err(CdReaderError::Io)?;
-    read_sectors_with_retry(start_lba, sectors, cfg)
-}
-
-pub fn read_sectors_with_retry(
-    start_lba: u32,
+pub(crate) fn read_cd_chunk(
+    lba: u32,
     sectors: u32,
-    cfg: &RetryConfig,
+    mode: SectorReadMode,
 ) -> Result<Vec<u8>, CdReaderError> {
-    read_sectors_with_mode(start_lba, sectors, &SectorReadMode::Audio, cfg)
-}
-
-pub fn read_sectors_with_mode(
-    start_lba: u32,
-    sectors: u32,
-    mode: &SectorReadMode,
-    cfg: &RetryConfig,
-) -> Result<Vec<u8>, CdReaderError> {
-    crate::read_loop::read_sectors_chunked(start_lba, sectors, mode, cfg, |lba, chunk_sectors| {
-        read_cd_chunk(lba, chunk_sectors, mode)
-    })
-}
-
-fn read_cd_chunk(lba: u32, sectors: u32, mode: &SectorReadMode) -> Result<Vec<u8>, CdReaderError> {
     let mut buf: *mut u8 = ptr::null_mut();
     let mut len: u32 = 0;
     let mut err: MacScsiError = Default::default();
