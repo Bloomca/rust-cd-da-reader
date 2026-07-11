@@ -145,10 +145,8 @@
 //! [MusicBrainz disc ID algorithm]: https://musicbrainz.org/doc/Disc_ID_Calculation
 #[cfg(target_os = "macos")]
 mod macos;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 mod platform;
-#[cfg(target_os = "windows")]
-mod windows;
 
 pub mod data_reader;
 mod discovery;
@@ -223,7 +221,7 @@ impl CdReader {
     pub fn open(path: &str) -> std::io::Result<Self> {
         #[cfg(target_os = "windows")]
         {
-            windows::open_drive(path)?;
+            platform::open_drive(path)?;
             Ok(Self {})
         }
 
@@ -266,7 +264,7 @@ impl CdReader {
     pub fn read_toc(&self) -> Result<Toc, CdReaderError> {
         #[cfg(target_os = "windows")]
         {
-            windows::read_toc()
+            platform::read_toc()
         }
 
         #[cfg(target_os = "macos")]
@@ -330,7 +328,7 @@ impl CdReader {
         read_loop::read_sectors_chunked(start_lba, sectors, mode, cfg, |lba, chunk_sectors| {
             #[cfg(target_os = "windows")]
             {
-                windows::read_cd_chunk(lba, chunk_sectors, mode)
+                platform::read_cd_chunk(lba, chunk_sectors, mode)
             }
 
             #[cfg(target_os = "macos")]
@@ -355,7 +353,7 @@ impl Drop for CdReader {
     fn drop(&mut self) {
         #[cfg(target_os = "windows")]
         {
-            windows::close_drive();
+            platform::close_drive();
         }
 
         #[cfg(target_os = "macos")]
