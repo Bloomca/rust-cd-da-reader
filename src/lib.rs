@@ -143,10 +143,10 @@
 //! [CD-TEXT]: https://en.wikipedia.org/wiki/CD-Text
 //! [MusicBrainz]: https://musicbrainz.org/
 //! [MusicBrainz disc ID algorithm]: https://musicbrainz.org/doc/Disc_ID_Calculation
-#[cfg(target_os = "linux")]
-mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(target_os = "linux")]
+mod platform;
 #[cfg(target_os = "windows")]
 mod windows;
 
@@ -235,7 +235,7 @@ impl CdReader {
 
         #[cfg(target_os = "linux")]
         {
-            linux::open_drive(path)?;
+            platform::open_drive(path)?;
             Ok(Self {})
         }
 
@@ -276,7 +276,7 @@ impl CdReader {
 
         #[cfg(target_os = "linux")]
         {
-            linux::read_toc()
+            platform::read_toc()
         }
 
         #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
@@ -340,7 +340,7 @@ impl CdReader {
 
             #[cfg(target_os = "linux")]
             {
-                linux::read_cd_chunk(lba, chunk_sectors, mode)
+                platform::read_cd_chunk(lba, chunk_sectors, mode)
             }
 
             #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
@@ -365,7 +365,7 @@ impl Drop for CdReader {
 
         #[cfg(target_os = "linux")]
         {
-            linux::close_drive();
+            platform::close_drive();
         }
     }
 }
