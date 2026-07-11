@@ -3,9 +3,8 @@ use std::io;
 use std::{ptr, slice};
 
 use super::ffi::{MacDriveInfo, cd_free, close_dev_session, list_cd_drives, open_dev_session};
-use crate::DriveInfo;
 
-pub(crate) fn list_drives() -> io::Result<Vec<DriveInfo>> {
+pub(crate) fn list_drive_paths() -> io::Result<Vec<String>> {
     let mut raw_drives: *mut MacDriveInfo = ptr::null_mut();
     let mut count = 0u32;
 
@@ -28,15 +27,11 @@ pub(crate) fn list_drives() -> io::Result<Vec<DriveInfo>> {
                 continue;
             }
 
-            drives.push(DriveInfo {
-                display_name: Some(path.clone()),
-                path,
-                has_audio_cd: drive.has_audio != 0,
-            });
+            drives.push(path);
         }
 
-        drives.sort_by(|left, right| left.path.cmp(&right.path));
-        drives.dedup_by(|left, right| left.path == right.path);
+        drives.sort();
+        drives.dedup();
         drives
     };
 
