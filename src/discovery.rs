@@ -20,7 +20,7 @@ impl CdReader {
 
         let mut drives = Vec::with_capacity(paths.len());
         for path in paths {
-            let has_audio_cd = match Self::open(&path) {
+            let has_audio_cd = match Self::open_path(&path) {
                 Ok(reader) => match reader.read_toc() {
                     Ok(toc) => toc.tracks.iter().any(|track| track.is_audio),
                     Err(_) => false,
@@ -37,22 +37,19 @@ impl CdReader {
     /// Open the first discovered drive that currently has an audio CD.
     pub fn open_default() -> Result<Self, CdReaderError> {
         let drives = Self::list_drives()?;
-        let chosen = pick_default_drive_path(&drives).ok_or(CdReaderError::NoUsableDrive)?;
+        let chosen = pick_default_drive(&drives).ok_or(CdReaderError::NoUsableDrive)?;
 
         Self::open(chosen)
     }
 }
 
-fn pick_default_drive_path(drives: &[DriveInfo]) -> Option<&str> {
-    drives
-        .iter()
-        .find(|drive| drive.has_audio_cd)
-        .map(|drive| drive.path.as_str())
+fn pick_default_drive(drives: &[DriveInfo]) -> Option<&DriveInfo> {
+    drives.iter().find(|drive| drive.has_audio_cd)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{DriveInfo, pick_default_drive_path};
+    use super::{DriveInfo, pick_default_drive};
 
     #[test]
     fn chooses_first_audio_drive() {
@@ -71,7 +68,10 @@ mod tests {
             },
         ];
 
-        assert_eq!(pick_default_drive_path(&drives), Some("disk11"));
+        assert_eq!(
+            pick_default_drive(&drives).map(|drive| drive.path.as_str()),
+            Some("disk11")
+        );
     }
 
     #[test]
@@ -81,6 +81,6 @@ mod tests {
             has_audio_cd: false,
         }];
 
-        assert_eq!(pick_default_drive_path(&drives), None);
+        assert!(pick_default_drive(&drives).is_none());
     }
 }

@@ -26,21 +26,19 @@
 //! ```
 //!
 //! If you need to pick a specific drive, use [`CdReader::list_drives`] followed
-//! by calling [`CdReader::open`] with the specific drive:
+//! by calling [`CdReader::open`] with the selected drive:
 //!
 //! ```no_run
 //! use cd_da_reader::CdReader;
 //!
-//! // Windows / Linux: enumerate drives and inspect the has_audio_cd field
 //! let drives = CdReader::list_drives()?;
-//!
-//! // Any platform: open a known path directly
-//! // Windows:  r"\\.\E:"
-//! // macOS:    "disk6"
-//! // Linux:    "/dev/sr0"
-//! let reader = CdReader::open("disk6")?;
+//! let selected = drives.first().ok_or("no optical drives found")?;
+//! let reader = CdReader::open(selected)?;
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
+//!
+//! If you already know the platform-specific device path, use
+//! [`CdReader::open_path`] instead.
 //!
 //! ## Reading ToC
 //!
@@ -199,22 +197,18 @@ pub struct CdReader {
 }
 
 impl CdReader {
-    /// Opens a CD drive at the specified path in order to read data.
+    /// Opens a drive returned by [`CdReader::list_drives`].
     ///
-    /// It is crucial to call this function and not to create the Reader
-    /// by yourself, as each OS needs its own way of handling the drive access.
+    /// The reader owns the opened drive until it is dropped.
+    pub fn open(drive: &DriveInfo) -> Result<Self, CdReaderError> {
+        Self::open_path(&drive.path)
+    }
+
+    /// Opens a CD drive at a platform-specific device path.
     ///
-    /// You don't need to close the drive; it will be handled automatically
-    /// when the `CdReader` is dropped.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - The device path (e.g., "/dev/sr0" on Linux, "disk6" on macOS, and r"\\.\E:" on Windows)
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the drive cannot be opened
-    pub fn open(path: &str) -> Result<Self, CdReaderError> {
+    /// Example paths are `/dev/sr0` on Linux, `disk6` on macOS, and
+    /// `\\.\E:` on Windows. The reader owns the opened drive until it is dropped.
+    pub fn open_path(path: &str) -> Result<Self, CdReaderError> {
         Ok(Self {
             drive: platform::Drive::open(path)?,
         })
