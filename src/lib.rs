@@ -85,13 +85,14 @@
 //! use the streaming API instead:
 //!
 //! ```no_run
-//! use cd_da_reader::{CdReader, RetryConfig, TrackStreamConfig};
+//! use cd_da_reader::{CdReader, RetryConfig, SectorReadMode, TrackStreamConfig};
 //!
 //! let reader = CdReader::open_default()?;
 //! let toc = reader.read_toc()?;
 //!
 //! let cfg = TrackStreamConfig {
-//!     sectors_per_chunk: 27, // ~64 KB per chunk
+//!     sectors_per_chunk: 27, // ~64 KB per audio chunk
+//!     mode: SectorReadMode::Audio,
 //!     retry: RetryConfig::default(),
 //! };
 //!
