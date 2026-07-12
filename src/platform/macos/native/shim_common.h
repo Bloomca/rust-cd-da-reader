@@ -34,16 +34,12 @@ typedef struct {
     uint8_t has_audio;
 } CdDriveInfo;
 
-extern char globalBsdName[64];
-
-bool cd_read_toc(uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr);
-bool read_cd_sectors(uint32_t lba, uint32_t sectors, uint32_t mode_id, uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr);
+bool cd_read_toc(int fd, uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr);
+bool read_cd_sectors(int fd, uint32_t lba, uint32_t sectors, uint32_t mode_id, uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr);
 void cd_free(void *p);
 
 bool list_cd_drives(CdDriveInfo **outDrives, uint32_t *outCount);
 
-int open_cd_raw_device(void);
-Boolean open_dev_session(const char *bsdName);
-void close_dev_session(void);
+int open_cd_raw_device(const char *bsdName);
 
 #endif

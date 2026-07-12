@@ -1,12 +1,12 @@
 use std::mem::{offset_of, size_of};
 use std::ptr;
 
+use windows_sys::Win32::Foundation::HANDLE;
 use windows_sys::Win32::Storage::IscsiDisc::{
     IOCTL_SCSI_PASS_THROUGH_DIRECT, SCSI_IOCTL_DATA_IN, SCSI_PASS_THROUGH_DIRECT,
 };
 use windows_sys::Win32::System::IO::DeviceIoControl;
 
-use super::device;
 use crate::{CdReaderError, ScsiError, ScsiOp};
 
 const SENSE_BUFFER_SIZE: usize = 32;
@@ -26,6 +26,7 @@ pub(super) struct CommandContext {
 
 /// Execute one SCSI read through Windows SPTI and return the transferred byte count.
 pub(super) fn execute_read(
+    handle: HANDLE,
     cdb: &[u8],
     output: &mut [u8],
     timeout_seconds: u32,
@@ -37,7 +38,6 @@ pub(super) fn execute_read(
 
     let transfer_len = u32::try_from(output.len())
         .map_err(|_| invalid_input("SCSI transfer buffer is too large"))?;
-    let handle = device::drive_handle().map_err(CdReaderError::Io)?;
     let mut wrapper: SptdWithSense = unsafe { std::mem::zeroed() };
 
     wrapper.sptd.Length = size_of::<SCSI_PASS_THROUGH_DIRECT>() as u16;

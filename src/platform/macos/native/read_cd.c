@@ -33,7 +33,7 @@ static bool sector_layout_for_mode(uint32_t mode_id,
     }
 }
 
-bool read_cd_sectors(uint32_t lba, uint32_t sectors, uint32_t mode_id,
+bool read_cd_sectors(int fd, uint32_t lba, uint32_t sectors, uint32_t mode_id,
                      uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr) {
     *outBuf = NULL;
     *outLen = 0;
@@ -67,13 +67,6 @@ bool read_cd_sectors(uint32_t lba, uint32_t sectors, uint32_t mode_id,
         goto fail;
     }
 
-    int fd = open_cd_raw_device();
-    if (fd < 0) {
-        fprintf(stderr, "[READ] open raw CD device failed (errno=%d)\n", errno);
-        free(dst);
-        goto fail;
-    }
-
     dk_cd_read_t read = {0};
     read.offset = (uint64_t)lba * (uint64_t)sectorSize;
     read.sectorArea = sectorArea;
@@ -82,7 +75,6 @@ bool read_cd_sectors(uint32_t lba, uint32_t sectors, uint32_t mode_id,
     read.buffer = dst;
 
     int ret = ioctl(fd, DKIOCCDREAD, &read);
-    close(fd);
 
     if (ret < 0) {
         fprintf(stderr, "[READ] DKIOCCDREAD failed (errno=%d)\n", errno);

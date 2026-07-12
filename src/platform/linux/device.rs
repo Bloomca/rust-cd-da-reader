@@ -5,7 +5,40 @@ use std::io;
 use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 use std::path::Path;
 
-static mut DRIVE_HANDLE: Option<File> = None;
+pub(crate) struct Drive {
+    // file closes the file descriptor on drop automatically
+    file: File,
+}
+
+impl Drive {
+    pub(crate) fn open(path: &str) -> io::Result<Self> {
+        let path = CString::new(path).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "drive path contains an interior NUL byte",
+            )
+        })?;
+        let fd = unsafe { libc::open(path.as_ptr(), O_RDWR | O_NONBLOCK) };
+        if fd < 0 {
+            return Err(io::Error::last_os_error());
+        }
+
+        Ok(Self {
+            file: unsafe { File::from_raw_fd(fd) },
+        })
+    }
+
+    pub(super) fn fd(&self) -> RawFd {
+        self.file.as_raw_fd()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_drive() -> Self {
+        Self {
+            file: File::open("/dev/null").expect("could not open /dev/null for tests"),
+        }
+    }
+}
 
 pub(crate) fn list_drive_paths() -> io::Result<Vec<String>> {
     let mut drives = Vec::new();
@@ -27,43 +60,4 @@ pub(crate) fn list_drive_paths() -> io::Result<Vec<String>> {
     drives.sort();
     drives.dedup();
     Ok(drives)
-}
-
-pub(crate) fn open_drive(path: &str) -> io::Result<()> {
-    let path = CString::new(path).map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "drive path contains an interior NUL byte",
-        )
-    })?;
-    let fd = unsafe { libc::open(path.as_ptr(), O_RDWR | O_NONBLOCK) };
-    if fd < 0 {
-        return Err(io::Error::last_os_error());
-    }
-
-    let drive_handle = unsafe { File::from_raw_fd(fd) };
-    unsafe {
-        DRIVE_HANDLE = Some(drive_handle);
-    }
-
-    Ok(())
-}
-
-#[allow(static_mut_refs)]
-pub(crate) fn close_drive() {
-    unsafe {
-        if let Some(current_drive) = DRIVE_HANDLE.take() {
-            drop(current_drive);
-        }
-    }
-}
-
-#[allow(static_mut_refs)]
-pub(super) fn drive_fd() -> io::Result<RawFd> {
-    unsafe {
-        DRIVE_HANDLE
-            .as_ref()
-            .map(AsRawFd::as_raw_fd)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Drive not opened"))
-    }
 }

@@ -1,22 +1,15 @@
 #include "shim_common.h"
 
-static Boolean read_toc(uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr) {
+static Boolean read_toc(int fd, uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr) {
     *outBuf = NULL;
     *outLen = 0;
     if (outErr) {
         memset(outErr, 0, sizeof(CdScsiError));
     }
 
-    int fd = open_cd_raw_device();
-    if (fd < 0) {
-        fprintf(stderr, "[TOC] open raw CD device failed (errno=%d)\n", errno);
-        goto fail;
-    }
-
     const uint16_t rawAlloc = 4096;
     uint8_t *raw = malloc(rawAlloc);
     if (!raw) {
-        close(fd);
         fprintf(stderr, "[TOC] oom\n");
         goto fail;
     }
@@ -29,7 +22,6 @@ static Boolean read_toc(uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr)
     request.buffer = raw;
 
     int ret = ioctl(fd, DKIOCCDREADTOC, &request);
-    close(fd);
 
     if (ret < 0) {
         fprintf(stderr, "[TOC] DKIOCCDREADTOC failed (errno=%d)\n", errno);
@@ -138,8 +130,8 @@ fail:
     return false;
 }
 
-bool cd_read_toc(uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr) {
-    return read_toc(outBuf, outLen, outErr);
+bool cd_read_toc(int fd, uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr) {
+    return read_toc(fd, outBuf, outLen, outErr);
 }
 
 void cd_free(void *p) {

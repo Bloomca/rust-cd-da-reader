@@ -1,6 +1,6 @@
 use libc::{c_uchar, c_void};
+use std::os::fd::RawFd;
 
-use super::device;
 use crate::{CdReaderError, ScsiError, ScsiOp};
 
 const SG_INFO_CHECK: u32 = 0x1;
@@ -46,6 +46,7 @@ pub(super) struct CommandContext {
 
 /// Execute a single SCSI read command and return the number of bytes transferred.
 pub(super) fn execute_read(
+    fd: RawFd,
     cdb: &mut [u8],
     output: &mut [u8],
     timeout_ms: u32,
@@ -84,7 +85,6 @@ pub(super) fn execute_read(
         info: 0,
     };
 
-    let fd = device::drive_fd().map_err(CdReaderError::Io)?;
     let result = unsafe { libc::ioctl(fd, SG_IO, &mut header as *mut _) };
     if result < 0 {
         return Err(CdReaderError::Io(std::io::Error::last_os_error()));
