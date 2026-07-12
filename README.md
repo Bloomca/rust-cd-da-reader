@@ -31,14 +31,23 @@ use cd_da_reader::{CdReader};
 let drives = CdReader::list_drives()?;
 ```
 
-This will give you a vector of drives, and the struct will have `has_audio_cd` field for audio CDs.
-
-If you already know the drive name, you can open it directly:
+This gives you a vector of drives. Each entry has a `has_audio_cd` field and can
+be opened directly:
 
 ```rust
-use cd_da_reader::{CdReader};
+use cd_da_reader::CdReader;
 
-let reader = CdReader::open("disk14")?;
+let drives = CdReader::list_drives()?;
+let selected = drives.first().ok_or("no optical drives found")?;
+let reader = CdReader::open(selected)?;
+```
+
+If you already know the platform-specific device path, use `open_path`:
+
+```rust
+use cd_da_reader::CdReader;
+
+let reader = CdReader::open_path("disk14")?;
 ```
 
 ## Reading ToC
