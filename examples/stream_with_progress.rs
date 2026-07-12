@@ -1,5 +1,5 @@
 /// Streams the first audio track while printing a live progress line.
-use cd_da_reader::{CdReader, TrackStreamConfig};
+use cd_da_reader::{CdReader, TrackStreamOptions};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let reader = CdReader::open_default()?;
@@ -12,7 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("no audio tracks found")?;
 
     let mut stream =
-        reader.open_track_stream(&toc, first_audio.number, TrackStreamConfig::default())?;
+        reader.open_track_stream(&toc, first_audio.number, TrackStreamOptions::default())?;
 
     let total_secs = stream.total_seconds();
     println!(
