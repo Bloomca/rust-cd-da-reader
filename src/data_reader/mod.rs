@@ -1,4 +1,5 @@
 mod sector_read_format;
+pub(crate) mod track_information;
 
 pub use sector_read_format::SectorReadFormat;
 

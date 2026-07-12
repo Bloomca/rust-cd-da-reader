@@ -33,6 +33,7 @@ typedef struct {
 } CdDriveInfo;
 
 bool cd_read_toc(int fd, uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr);
+bool cd_read_track_information(int fd, uint8_t trackNumber, uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr);
 bool read_cd_sectors(int fd, uint32_t lba, uint32_t sectors, uint32_t format_id, uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr);
 void cd_free(void *p);
 
