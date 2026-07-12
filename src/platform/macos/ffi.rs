@@ -27,6 +27,13 @@ unsafe extern "C" {
         out_len: *mut u32,
         out_err: *mut MacScsiError,
     ) -> bool;
+    pub(super) fn cd_read_track_information(
+        fd: libc::c_int,
+        track_number: u8,
+        out_buf: *mut *mut u8,
+        out_len: *mut u32,
+        out_err: *mut MacScsiError,
+    ) -> bool;
     pub(super) fn read_cd_sectors(
         fd: libc::c_int,
         lba: u32,

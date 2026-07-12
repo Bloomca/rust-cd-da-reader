@@ -5,8 +5,10 @@ use std::fmt;
 pub enum ScsiOp {
     /// `READ TOC/PMA/ATIP` command (opcode `0x43`) for TOC/session metadata.
     ReadToc,
-    /// `READ CD` command (opcode `0xBE`) for CD-DA sector payload (2352 bytes/sector).
+    /// `READ CD` command (opcode `0xBE`) for audio or data sectors.
     ReadCd,
+    /// `READ TRACK INFORMATION` command (opcode `0x52`) for track metadata.
+    ReadTrackInformation,
     /// `READ SUB-CHANNEL` command for Q-channel/subcode metadata.
     ReadSubChannel,
 }
