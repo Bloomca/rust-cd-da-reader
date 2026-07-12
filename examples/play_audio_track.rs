@@ -16,7 +16,7 @@
 //! The WAV is written to the current directory and then handed to the platform's
 //! built-in player (`afplay` on macOS, `Media.SoundPlayer` on Windows). On other
 //! platforms it is saved and you are told how to play it yourself.
-use cd_da_reader::{CdReader, RetryConfig, SectorReadMode};
+use cd_da_reader::{CdReader, ReadOptions};
 
 /// CD-DA plays 75 sectors (each 2352 bytes) per second.
 const SECTORS_PER_SECOND: u32 = 75;
@@ -53,12 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Reading first {actual_seconds}s ({sectors} sectors) of audio track #{}...",
         track.number
     );
-    let pcm = reader.read_data_sectors(
-        track.start_lba,
-        sectors,
-        SectorReadMode::Audio,
-        &RetryConfig::default(),
-    )?;
+    let pcm = reader.read_sector_range(track.start_lba, sectors, &ReadOptions::default())?;
     println!(
         "Read {} bytes of PCM ({:.1} MiB)",
         pcm.len(),

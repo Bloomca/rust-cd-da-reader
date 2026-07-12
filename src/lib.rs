@@ -260,33 +260,28 @@ impl CdReader {
     ) -> Result<Vec<u8>, CdReaderError> {
         let (start_lba, sectors) =
             utils::get_track_bounds(toc, track_no).map_err(CdReaderError::Io)?;
-        self.read_sector_range_with_retry(start_lba, sectors, options.mode, &options.retry)
+        self.read_sector_range(start_lba, sectors, options)
     }
 
-    /// Read sectors in a specific mode (audio, data cooked, or data raw).
+    /// Read an arbitrary range of sectors using explicit format and retry options.
     ///
-    /// This uses the READ CD (0xBE) SCSI command with configurable sector type
-    /// and main channel flags, supporting audio, cooked data (2048 B/sector),
-    /// and raw data (2352 B/sector) reads.
-    pub fn read_data_sectors(
-        &self,
-        lba: u32,
-        count: u32,
-        mode: SectorReadMode,
-        cfg: &RetryConfig,
-    ) -> Result<Vec<u8>, CdReaderError> {
-        self.read_sector_range_with_retry(lba, count, mode, cfg)
-    }
-
-    pub(crate) fn read_sector_range_with_retry(
+    /// # Low-level API
+    ///
+    /// Callers are responsible for providing valid sector boundaries and selecting
+    /// a format compatible with the sectors on the disc. Prefer [`CdReader::read_track`]
+    /// or [`CdReader::read_track_with_options`] when reading a complete TOC track.
+    pub fn read_sector_range(
         &self,
         start_lba: u32,
         sectors: u32,
-        mode: SectorReadMode,
-        cfg: &RetryConfig,
+        options: &ReadOptions,
     ) -> Result<Vec<u8>, CdReaderError> {
-        read_loop::read_sectors_chunked(start_lba, sectors, mode, cfg, |lba, chunk_sectors| {
-            self.drive.read_cd_chunk(lba, chunk_sectors, mode)
-        })
+        read_loop::read_sectors_chunked(
+            start_lba,
+            sectors,
+            options.mode,
+            &options.retry,
+            |lba, chunk_sectors| self.drive.read_cd_chunk(lba, chunk_sectors, options.mode),
+        )
     }
 }
