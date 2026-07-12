@@ -139,6 +139,12 @@ let image = reader.read_track_with_options(&toc, data_track.number, &options)?;
 std::fs::write("disc.iso", &image)?;
 ```
 
+The blocking read above buffers the whole image in memory. A data track can be
+hundreds of MB, so for anything non-trivial prefer the streaming path with the
+same `Mode1Cooked` format — pull chunks and write them straight to the file, so
+peak memory stays at one chunk. That is exactly what `examples/save_data_track.rs`
+does.
+
 Then mount and explore:
 
 | OS | Mount | Unmount |
@@ -147,10 +153,10 @@ Then mount and explore:
 | Linux | `sudo mount -o loop,ro disc.iso /mnt/cd` | `sudo umount /mnt/cd` |
 | Windows | `Mount-DiskImage -ImagePath disc.iso` | `Dismount-DiskImage -ImagePath disc.iso` |
 
-The full runnable version — including the Mode 2 branch — is
-`examples/save_data_track.rs`. To verify a data read against the on-disc ISO
-structure (sync pattern, `CD001` signature, cooked-equals-raw), see
-`examples/read_data_track.rs`.
+The full runnable version — streaming to disk with a progress line, including the
+Mode 2 branch — is `examples/save_data_track.rs`. To verify a data read against
+the on-disc ISO structure (sync pattern, `CD001` signature, cooked-equals-raw),
+see `examples/read_data_track.rs`.
 
 ---
 
