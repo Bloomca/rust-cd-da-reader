@@ -1,5 +1,7 @@
 use std::fmt;
 
+use crate::SectorReadFormat;
+
 /// SCSI command groups issued by this library.
 #[derive(Debug, Clone, Copy)]
 pub enum ScsiOp {
@@ -44,6 +46,15 @@ pub enum CdReaderError {
     Scsi(ScsiError),
     /// Parsing failure for command payloads (TOC/CD-TEXT/subchannel parsing).
     Parse(String),
+    /// The requested sector format is incompatible with the track type.
+    TrackFormatMismatch {
+        /// Track number from the TOC.
+        track_number: u8,
+        /// Whether the TOC identifies the track as audio.
+        track_is_audio: bool,
+        /// Format requested by the caller.
+        requested_format: SectorReadFormat,
+    },
     /// The track's sector format could not be determined.
     CannotDetectTrackFormat {
         /// Track number from the TOC.
@@ -65,6 +76,17 @@ impl fmt::Display for CdReaderError {
                 err.op, err.scsi_status, err.lba, err.sectors, err.sense_key, err.asc, err.ascq
             ),
             Self::Parse(msg) => write!(f, "parse error: {msg}"),
+            Self::TrackFormatMismatch {
+                track_number,
+                track_is_audio,
+                requested_format,
+            } => {
+                let track_type = if *track_is_audio { "audio" } else { "data" };
+                write!(
+                    f,
+                    "cannot read {track_type} track {track_number} using {requested_format:?}"
+                )
+            }
             Self::CannotDetectTrackFormat {
                 track_number,
                 data_mode: Some(data_mode),
@@ -87,6 +109,7 @@ impl std::error::Error for CdReaderError {
             Self::Io(error) => Some(error),
             Self::Scsi(_)
             | Self::Parse(_)
+            | Self::TrackFormatMismatch { .. }
             | Self::CannotDetectTrackFormat { .. }
             | Self::NoUsableDrive => None,
         }

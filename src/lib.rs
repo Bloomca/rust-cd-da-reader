@@ -253,6 +253,10 @@ impl CdReader {
         track_no: u8,
         options: &ReadOptions,
     ) -> Result<Vec<u8>, CdReaderError> {
+        if let Some(track) = toc.tracks.iter().find(|track| track.number == track_no) {
+            data_reader::validate_track_format(track, options.format())?;
+        }
+
         let (start_lba, sectors) =
             utils::get_track_bounds(toc, track_no).map_err(CdReaderError::Io)?;
         self.read_sector_range(start_lba, sectors, options)

@@ -6,6 +6,7 @@ pub(crate) mod track_information;
 pub use sector_read_format::SectorReadFormat;
 
 use crate::retry::RetryConfig;
+use crate::{CdReaderError, Track};
 
 /// Sector format and retry options for track and sector-range reads.
 ///
@@ -48,6 +49,22 @@ impl Default for ReadOptions {
     }
 }
 
+pub(crate) fn validate_track_format(
+    track: &Track,
+    format: SectorReadFormat,
+) -> Result<(), CdReaderError> {
+    // this checks both whether both are audio, or both are not audio
+    if track.is_audio == format.is_audio() {
+        return Ok(());
+    }
+
+    Err(CdReaderError::TrackFormatMismatch {
+        track_number: track.number,
+        track_is_audio: track.is_audio,
+        requested_format: format,
+    })
+}
+
 /// Build a READ CD (0xBE) command descriptor block for Linux and Windows.
 #[cfg(any(target_os = "linux", target_os = "windows", test))]
 pub(crate) fn build_read_cd_cdb(lba: u32, sectors: u32, format: SectorReadFormat) -> [u8; 12] {
@@ -64,7 +81,8 @@ pub(crate) fn build_read_cd_cdb(lba: u32, sectors: u32, format: SectorReadFormat
 
 #[cfg(test)]
 mod tests {
-    use super::{ReadOptions, SectorReadFormat, build_read_cd_cdb};
+    use super::{ReadOptions, SectorReadFormat, build_read_cd_cdb, validate_track_format};
+    use crate::{CdReaderError, Track};
 
     #[test]
     fn read_options_builders_override_individual_defaults() {
@@ -77,6 +95,44 @@ mod tests {
 
         assert_eq!(options.format(), SectorReadFormat::Mode1Raw);
         assert_eq!(options.retry().max_attempts, 9);
+    }
+
+    #[test]
+    fn validates_track_and_format_compatibility() {
+        let audio = Track {
+            number: 1,
+            start_lba: 0,
+            start_msf: (0, 2, 0),
+            is_audio: true,
+        };
+        let data = Track {
+            number: 2,
+            start_lba: 10_000,
+            start_msf: (2, 15, 25),
+            is_audio: false,
+        };
+
+        assert!(validate_track_format(&audio, SectorReadFormat::Audio).is_ok());
+        assert!(validate_track_format(&data, SectorReadFormat::Mode1Cooked).is_ok());
+        assert!(validate_track_format(&data, SectorReadFormat::Mode1Raw).is_ok());
+        assert!(validate_track_format(&data, SectorReadFormat::Mode2Raw).is_ok());
+
+        assert!(matches!(
+            validate_track_format(&audio, SectorReadFormat::Mode1Cooked),
+            Err(CdReaderError::TrackFormatMismatch {
+                track_number: 1,
+                track_is_audio: true,
+                requested_format: SectorReadFormat::Mode1Cooked,
+            })
+        ));
+        assert!(matches!(
+            validate_track_format(&data, SectorReadFormat::Audio),
+            Err(CdReaderError::TrackFormatMismatch {
+                track_number: 2,
+                track_is_audio: false,
+                requested_format: SectorReadFormat::Audio,
+            })
+        ));
     }
 
     #[test]

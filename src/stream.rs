@@ -1,5 +1,6 @@
 use std::cmp::min;
 
+use crate::data_reader::validate_track_format;
 use crate::{CdReader, CdReaderError, ReadOptions, RetryConfig, SectorReadFormat, Toc, utils};
 
 /// Options for streamed track reads.
@@ -179,6 +180,10 @@ impl CdReader {
         track_no: u8,
         options: TrackStreamOptions,
     ) -> Result<TrackStream<'a>, CdReaderError> {
+        if let Some(track) = toc.tracks.iter().find(|track| track.number == track_no) {
+            validate_track_format(track, options.format)?;
+        }
+
         let (start_lba, sectors) =
             utils::get_track_bounds(toc, track_no).map_err(CdReaderError::Io)?;
 
