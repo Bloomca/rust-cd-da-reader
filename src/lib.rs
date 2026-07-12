@@ -138,7 +138,7 @@
 //! [MusicBrainz disc ID algorithm]: https://musicbrainz.org/doc/Disc_ID_Calculation
 mod platform;
 
-pub mod data_reader;
+mod data_reader;
 mod discovery;
 mod errors;
 mod read_loop;

@@ -1,6 +1,6 @@
 use crate::{Toc, Track};
 
-pub fn parse_toc(data: Vec<u8>) -> std::io::Result<Toc> {
+pub(crate) fn parse_toc(data: Vec<u8>) -> std::io::Result<Toc> {
     // TOC data format:
     // Bytes 0-1: TOC data length
     // Byte 2: First track number

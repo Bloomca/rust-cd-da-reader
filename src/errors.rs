@@ -11,8 +11,6 @@ pub enum ScsiOp {
     ReadCd,
     /// `READ TRACK INFORMATION` command (opcode `0x52`) for track metadata.
     ReadTrackInformation,
-    /// `READ SUB-CHANNEL` command for Q-channel/subcode metadata.
-    ReadSubChannel,
 }
 
 /// Structured SCSI failure context captured at the call site.
@@ -44,7 +42,7 @@ pub enum CdReaderError {
     Io(std::io::Error),
     /// Device reported a SCSI command failure with status/sense context.
     Scsi(ScsiError),
-    /// Parsing failure for command payloads (TOC/CD-TEXT/subchannel parsing).
+    /// Parsing failure for command response payloads.
     Parse(String),
     /// The requested sector format is incompatible with the track type.
     TrackFormatMismatch {
