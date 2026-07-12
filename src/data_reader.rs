@@ -1,3 +1,23 @@
+use crate::retry::RetryConfig;
+
+/// Options for reading a complete track.
+#[derive(Debug, Clone)]
+pub struct ReadOptions {
+    /// Sector format requested from the drive.
+    pub mode: SectorReadMode,
+    /// Retry policy applied to each read command.
+    pub retry: RetryConfig,
+}
+
+impl Default for ReadOptions {
+    fn default() -> Self {
+        Self {
+            mode: SectorReadMode::Audio,
+            retry: RetryConfig::default(),
+        }
+    }
+}
+
 /// Sector read mode for the READ CD (0xBE) command.
 ///
 /// Controls CDB byte 1 (Expected Sector Type) and byte 9 (Main Channel Selection)
@@ -81,7 +101,14 @@ pub(crate) fn build_read_cd_cdb(lba: u32, sectors: u32, mode: SectorReadMode) ->
 
 #[cfg(test)]
 mod tests {
-    use super::{SectorReadMode, build_read_cd_cdb};
+    use super::{ReadOptions, SectorReadMode, build_read_cd_cdb};
+
+    #[test]
+    fn read_options_default_to_audio() {
+        let options = ReadOptions::default();
+
+        assert_eq!(options.mode, SectorReadMode::Audio);
+    }
 
     #[test]
     fn cdb_byte1_encodes_expected_sector_type() {
