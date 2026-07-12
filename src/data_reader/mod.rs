@@ -1,4 +1,5 @@
 mod detect;
+mod raw_sector;
 mod sector_read_format;
 pub(crate) mod track_information;
 

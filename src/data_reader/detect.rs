@@ -1,18 +1,25 @@
-use crate::{CdReader, CdReaderError, SectorReadFormat, Track};
+use super::raw_sector::{RawSectorMode, RawSectorParseError, parse_raw_sector};
+use crate::{CdReader, CdReaderError, ReadOptions, SectorReadFormat, Track};
 
 impl CdReader {
     /// Detect the default read format for a track.
     ///
     /// Audio tracks are identified directly from the TOC. Data tracks are
-    /// queried with MMC READ TRACK INFORMATION and mapped to their cooked
-    /// sector representation.
+    /// queried with MMC READ TRACK INFORMATION. If its Data Mode is
+    /// inconclusive, one raw sector is inspected as a fallback.
     pub fn detect_track_format(&self, track: &Track) -> Result<SectorReadFormat, CdReaderError> {
         if track.is_audio {
             return Ok(SectorReadFormat::Audio);
         }
 
         let information = self.drive.read_track_information(track.number)?;
-        format_from_data_mode(information.data_mode).ok_or(CdReaderError::CannotDetectTrackFormat {
+        if let Some(format) = format_from_data_mode(information.data_mode) {
+            return Ok(format);
+        }
+
+        let options = ReadOptions::default().with_format(SectorReadFormat::Mode2Raw);
+        let raw_sector = self.read_sector_range(track.start_lba, 1, &options)?;
+        format_from_raw_sector(&raw_sector).map_err(|_| CdReaderError::CannotDetectTrackFormat {
             track_number: track.number,
             data_mode: Some(information.data_mode),
         })
@@ -33,9 +40,25 @@ fn format_from_data_mode(data_mode: u8) -> Option<SectorReadFormat> {
     }
 }
 
+fn format_from_raw_sector(sector: &[u8]) -> Result<SectorReadFormat, RawSectorParseError> {
+    match parse_raw_sector(sector)?.mode {
+        RawSectorMode::Mode1 => Ok(SectorReadFormat::Mode1Cooked),
+        RawSectorMode::Mode2 => Ok(SectorReadFormat::Mode2Raw),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn raw_sector(mode: u8) -> [u8; 2352] {
+        let mut sector = [0u8; 2352];
+        sector[0] = 0x00;
+        sector[1..11].fill(0xFF);
+        sector[11] = 0x00;
+        sector[15] = mode;
+        sector
+    }
 
     #[test]
     fn audio_tracks_do_not_require_drive_detection() {
@@ -66,6 +89,18 @@ mod tests {
         assert_eq!(
             format_from_data_mode(0x02),
             Some(SectorReadFormat::Mode2Raw)
+        );
+    }
+
+    #[test]
+    fn maps_raw_sector_modes_to_supported_formats() {
+        assert_eq!(
+            format_from_raw_sector(&raw_sector(1)).unwrap(),
+            SectorReadFormat::Mode1Cooked
+        );
+        assert_eq!(
+            format_from_raw_sector(&raw_sector(2)).unwrap(),
+            SectorReadFormat::Mode2Raw
         );
     }
 
