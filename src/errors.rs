@@ -44,6 +44,13 @@ pub enum CdReaderError {
     Scsi(ScsiError),
     /// Parsing failure for command payloads (TOC/CD-TEXT/subchannel parsing).
     Parse(String),
+    /// The track's sector format could not be determined.
+    CannotDetectTrackFormat {
+        /// Track number from the TOC.
+        track_number: u8,
+        /// Unrecognized MMC Data Mode value, when one was reported.
+        data_mode: Option<u8>,
+    },
     /// Drive enumeration completed without finding a usable audio CD.
     NoUsableDrive,
 }
@@ -58,6 +65,17 @@ impl fmt::Display for CdReaderError {
                 err.op, err.scsi_status, err.lba, err.sectors, err.sense_key, err.asc, err.ascq
             ),
             Self::Parse(msg) => write!(f, "parse error: {msg}"),
+            Self::CannotDetectTrackFormat {
+                track_number,
+                data_mode: Some(data_mode),
+            } => write!(
+                f,
+                "could not detect sector format for track {track_number}: unknown MMC data mode 0x{data_mode:02x}"
+            ),
+            Self::CannotDetectTrackFormat {
+                track_number,
+                data_mode: None,
+            } => write!(f, "could not detect sector format for track {track_number}"),
             Self::NoUsableDrive => write!(f, "no usable audio CD drive found"),
         }
     }
@@ -67,7 +85,10 @@ impl std::error::Error for CdReaderError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io(error) => Some(error),
-            Self::Scsi(_) | Self::Parse(_) | Self::NoUsableDrive => None,
+            Self::Scsi(_)
+            | Self::Parse(_)
+            | Self::CannotDetectTrackFormat { .. }
+            | Self::NoUsableDrive => None,
         }
     }
 }
