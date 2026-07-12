@@ -271,12 +271,13 @@ impl CdReader {
         sectors: u32,
         options: &ReadOptions,
     ) -> Result<Vec<u8>, CdReaderError> {
+        let mode = options.mode();
         read_loop::read_sectors_chunked(
             start_lba,
             sectors,
-            options.mode,
-            &options.retry,
-            |lba, chunk_sectors| self.drive.read_cd_chunk(lba, chunk_sectors, options.mode),
+            mode,
+            options.retry(),
+            |lba, chunk_sectors| self.drive.read_cd_chunk(lba, chunk_sectors, mode),
         )
     }
 }

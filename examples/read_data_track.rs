@@ -30,10 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         data_track.number, data_track.start_lba, pvd_lba
     );
 
-    let mut options = ReadOptions {
-        mode: SectorReadMode::DataRaw,
-        ..ReadOptions::default()
-    };
+    let mut options = ReadOptions::default().with_mode(SectorReadMode::DataRaw);
 
     // --- raw read (2352 B) -------------------------------------------------
     let raw = reader.read_sector_range(pvd_lba, 1, &options)?;
@@ -61,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --- cooked read (2048 B) ---------------------------------------------
     // Our cooked mode maps to Mode 1; only meaningful to cross-check there.
     if mode == 1 {
-        options.mode = SectorReadMode::DataCooked;
+        options = options.with_mode(SectorReadMode::DataCooked);
         let cooked = reader.read_sector_range(pvd_lba, 1, &options)?;
         if cooked.len() != 2048 {
             return Err(
