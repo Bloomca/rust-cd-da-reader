@@ -140,6 +140,51 @@ std::fs::write("myfile.wav", wav)?;
 
 This code will read the first track from the CD file and save it as a WAVE file, which will be playable by any music player.
 
+## Reading data tracks
+
+Blocking reads and streaming reads share the same options struct, so switching from audio to data is just a matter of the format you pass. Every track's format can be auto-detected:
+
+```rust
+use cd_da_reader::{CdReader, ReadOptions, SectorReadFormat};
+
+let reader = CdReader::open_default()?;
+let toc = reader.read_toc()?;
+
+// A "data track" is simply `!is_audio` — there is no dedicated helper.
+let data_track = toc.tracks.iter().find(|t| !t.is_audio)
+    .ok_or("no data track on this disc")?;
+
+// Mode 1 data tracks detect as Mode1Cooked (2048 B user data per sector),
+// which is exactly the ISO 9660 image — write it out and mount it.
+let format = reader.detect_track_format(data_track)?;
+let options = ReadOptions::default().with_format(format);
+let image = reader.read_track_with_options(&toc, data_track.number, &options)?;
+std::fs::write("disc.iso", &image)?;
+```
+
+Mode 1 is fully handled (`Mode1Cooked` for the ready-to-mount user data, `Mode1Raw` for the complete 2352-byte sector). Mode 2 is *detected* (`Mode2Raw`) but its per-sector XA payload extraction is left to the consumer. The full workflow — detect, save, and platform-specific mount commands — is in `examples/save_data_track.rs`, and the detailed guide is [docs/consuming-cd-da-reader.md](docs/consuming-cd-da-reader.md).
+
+## Reading from a file image
+
+Everything above a raw sector read is hardware-independent, so you can read tracks from an image (CHD, BIN/CUE, an in-memory buffer, ...) instead of a drive. Implement `AudioSectorReader` for your backing — it must return raw sectors in the exact CD-DA format the physical reader produces: 2352 bytes/sector, 16-bit signed little-endian, stereo — and reuse the crate's TOC/track machinery, with no image-format dependencies pulled into this crate:
+
+```rust
+use cd_da_reader::{AudioSectorReader, create_wav, read_track};
+
+impl AudioSectorReader for MyImage {
+    type Error = std::io::Error;
+    fn read_audio_sectors(&self, start_lba: u32, count: u32) -> Result<Vec<u8>, Self::Error> {
+        // return exactly count * 2352 bytes of little-endian PCM
+        todo!()
+    }
+}
+
+let pcm = read_track(&image, &toc, 1)?;   // build `toc` from the image's metadata
+let wav = create_wav(pcm);                // free fn; also CdReader::create_wav
+```
+
+`CdReader` itself implements `AudioSectorReader`, so drive-backed and file-backed code share the generic `read_track` path. See `examples/file_backend.rs` for a complete, dependency-free example.
+
 ## What about metadata?
 
 You might have asked why do we expose LBA/MSF values if the track reading is abstracted behind specific track numbers. The reason for that is metadata. Even though there is a command [CD-TEXT](https://en.wikipedia.org/wiki/CD-Text) for storing data directly, it is not exposed in this library due to it being extremely unreliable.
