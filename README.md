@@ -104,13 +104,14 @@ let data = reader.read_track(&toc, 1)?;
 This is a blocking call and takes a lot of time (depends on the track length and CD/drive quality due to retries). If you want to do something with the data as it comes, use streaming API:
 
 ```rust
-use cd_da_reader::{CdReader, RetryConfig, TrackStreamConfig};
+use cd_da_reader::{CdReader, RetryConfig, SectorReadMode, TrackStreamConfig};
 
 let reader = CdReader::open_default()?;
 let toc = reader.read_toc()?;
 
 let stream_cfg = TrackStreamConfig {
-    sectors_per_chunk: 27, // ~64 KB per chunk
+    sectors_per_chunk: 27, // ~64 KB per audio chunk
+    mode: SectorReadMode::Audio,
     retry: RetryConfig::default(),
 };
 

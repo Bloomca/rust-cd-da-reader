@@ -1,6 +1,6 @@
 use crate::retry::RetryConfig;
 
-/// Options for reading a complete track.
+/// Sector format and retry options for track and sector-range reads.
 #[derive(Debug, Clone)]
 pub struct ReadOptions {
     /// Sector format requested from the drive.
