@@ -5,13 +5,20 @@
 // Rust) means the IOKit constants only ever appear where their header is
 // imported.
 //
-//   0 = Audio        -> user area, CDDA,  2352 B/sector
-//   1 = Mode1Cooked  -> user area, Mode 1, 2048 B/sector
-//   2 = Mode1Raw     -> sync+header+user+aux, Mode 1, 2352 B/sector
+//   0 = Audio                 -> user, CDDA, 2352 B/sector
+//   1 = Mode1Cooked           -> user, Mode 1, 2048 B/sector
+//   2 = Mode1Raw              -> full Mode 1, 2352 B/sector
+//   3 = Mode2FormlessCooked   -> user, Mode 2, 2336 B/sector
+//   4 = Mode2FormlessRaw      -> full Mode 2, 2352 B/sector
+//   5 = Mode2Form1Cooked      -> user, Mode 2 Form 1, 2048 B/sector
+//   6 = Mode2Form1Raw         -> full Mode 2 Form 1, 2352 B/sector
+//   7 = Mode2Form2Cooked      -> user, Mode 2 Form 2, 2328 B/sector
+//   8 = Mode2Form2Raw         -> full Mode 2 Form 2, 2352 B/sector
+//   9 = AnyRaw                -> full sector, unknown type, 2352 B/sector
 static bool sector_layout_for_format(uint32_t format_id,
-                                   CDSectorArea *outArea,
-                                   CDSectorType *outType,
-                                   uint32_t *outSectorSize) {
+                                     CDSectorArea *outArea,
+                                     CDSectorType *outType,
+                                     uint32_t *outSectorSize) {
     switch (format_id) {
         case 0:
             *outArea = kCDSectorAreaUser;
@@ -27,6 +34,47 @@ static bool sector_layout_for_format(uint32_t format_id,
             *outArea = (CDSectorArea)(kCDSectorAreaSync | kCDSectorAreaHeader |
                                       kCDSectorAreaUser | kCDSectorAreaAuxiliary);
             *outType = kCDSectorTypeMode1;
+            *outSectorSize = 2352;
+            return true;
+        case 3:
+            *outArea = kCDSectorAreaUser;
+            *outType = kCDSectorTypeMode2;
+            *outSectorSize = 2336;
+            return true;
+        case 4:
+            *outArea = (CDSectorArea)(kCDSectorAreaSync | kCDSectorAreaHeader |
+                                      kCDSectorAreaUser);
+            *outType = kCDSectorTypeMode2;
+            *outSectorSize = 2352;
+            return true;
+        case 5:
+            *outArea = kCDSectorAreaUser;
+            *outType = kCDSectorTypeMode2Form1;
+            *outSectorSize = 2048;
+            return true;
+        case 6:
+            *outArea = (CDSectorArea)(kCDSectorAreaSync | kCDSectorAreaHeader |
+                                      kCDSectorAreaSubHeader | kCDSectorAreaUser |
+                                      kCDSectorAreaAuxiliary);
+            *outType = kCDSectorTypeMode2Form1;
+            *outSectorSize = 2352;
+            return true;
+        case 7:
+            *outArea = kCDSectorAreaUser;
+            *outType = kCDSectorTypeMode2Form2;
+            *outSectorSize = 2328;
+            return true;
+        case 8:
+            *outArea = (CDSectorArea)(kCDSectorAreaSync | kCDSectorAreaHeader |
+                                      kCDSectorAreaSubHeader | kCDSectorAreaUser);
+            *outType = kCDSectorTypeMode2Form2;
+            *outSectorSize = 2352;
+            return true;
+        case 9:
+            *outArea = (CDSectorArea)(kCDSectorAreaSync | kCDSectorAreaHeader |
+                                      kCDSectorAreaSubHeader | kCDSectorAreaUser |
+                                      kCDSectorAreaAuxiliary);
+            *outType = kCDSectorTypeUnknown;
             *outSectorSize = 2352;
             return true;
         default:

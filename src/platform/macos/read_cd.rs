@@ -41,6 +41,13 @@ fn format_id(format: SectorReadFormat) -> u32 {
         SectorReadFormat::Audio => 0,
         SectorReadFormat::Mode1Cooked => 1,
         SectorReadFormat::Mode1Raw => 2,
+        SectorReadFormat::Mode2FormlessCooked => 3,
+        SectorReadFormat::Mode2FormlessRaw => 4,
+        SectorReadFormat::Mode2Form1Cooked => 5,
+        SectorReadFormat::Mode2Form1Raw => 6,
+        SectorReadFormat::Mode2Form2Cooked => 7,
+        SectorReadFormat::Mode2Form2Raw => 8,
+        SectorReadFormat::AnyRaw => 9,
     }
 }
 
@@ -54,5 +61,12 @@ mod tests {
         assert_eq!(format_id(SectorReadFormat::Audio), 0);
         assert_eq!(format_id(SectorReadFormat::Mode1Cooked), 1);
         assert_eq!(format_id(SectorReadFormat::Mode1Raw), 2);
+        assert_eq!(format_id(SectorReadFormat::Mode2FormlessCooked), 3);
+        assert_eq!(format_id(SectorReadFormat::Mode2FormlessRaw), 4);
+        assert_eq!(format_id(SectorReadFormat::Mode2Form1Cooked), 5);
+        assert_eq!(format_id(SectorReadFormat::Mode2Form1Raw), 6);
+        assert_eq!(format_id(SectorReadFormat::Mode2Form2Cooked), 7);
+        assert_eq!(format_id(SectorReadFormat::Mode2Form2Raw), 8);
+        assert_eq!(format_id(SectorReadFormat::AnyRaw), 9);
     }
 }
