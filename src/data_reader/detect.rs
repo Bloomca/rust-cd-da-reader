@@ -23,11 +23,12 @@ impl CdReader {
 /// default read format.
 ///
 /// MMC reports `0x01` for Mode 1 and `0x02` for Mode 2. Track Information does
-/// not identify the per-sector Mode 2 form, so Mode 2 requires raw inspection
-/// before a read format can be selected.
+/// not identify the per-sector Mode 2 form, so Mode 2 is exposed as complete
+/// raw sectors.
 fn format_from_data_mode(data_mode: u8) -> Option<SectorReadFormat> {
     match data_mode {
         0x01 => Some(SectorReadFormat::Mode1Cooked),
+        0x02 => Some(SectorReadFormat::Mode2Raw),
         _ => None,
     }
 }
@@ -61,8 +62,11 @@ mod tests {
     }
 
     #[test]
-    fn mode2_requires_raw_sector_inspection() {
-        assert_eq!(format_from_data_mode(0x02), None);
+    fn maps_mode2_to_raw_sectors() {
+        assert_eq!(
+            format_from_data_mode(0x02),
+            Some(SectorReadFormat::Mode2Raw)
+        );
     }
 
     #[test]
