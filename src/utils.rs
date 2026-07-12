@@ -2,7 +2,7 @@ use crate::Toc;
 
 const CD_EXTRA_TRAILING_DATA_GAP_SECTORS: u32 = 11_400;
 
-pub fn get_track_bounds(toc: &Toc, track_no: u8) -> std::io::Result<(u32, u32)> {
+pub(crate) fn get_track_bounds(toc: &Toc, track_no: u8) -> std::io::Result<(u32, u32)> {
     let idx = toc
         .tracks
         .iter()
@@ -46,7 +46,7 @@ fn bad_toc_bounds() -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::InvalidData, "bad TOC bounds")
 }
 
-pub fn create_wav_header(pcm_data_size: u32) -> Vec<u8> {
+pub(crate) fn create_wav_header(pcm_data_size: u32) -> Vec<u8> {
     let mut header = Vec::with_capacity(44);
 
     // RIFF header
