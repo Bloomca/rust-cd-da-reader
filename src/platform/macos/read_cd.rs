@@ -2,13 +2,13 @@ use std::{ptr, slice};
 
 use super::device::Drive;
 use super::ffi::{MacScsiError, cd_free, map_error, read_cd_sectors};
-use crate::{CdReaderError, ScsiOp, SectorReadMode};
+use crate::{CdReaderError, ScsiOp, SectorReadFormat};
 
 pub(super) fn read_cd_chunk(
     drive: &Drive,
     lba: u32,
     sectors: u32,
-    mode: SectorReadMode,
+    format: SectorReadFormat,
 ) -> Result<Vec<u8>, CdReaderError> {
     let mut buffer: *mut u8 = ptr::null_mut();
     let mut len = 0u32;
@@ -19,7 +19,7 @@ pub(super) fn read_cd_chunk(
             drive.fd(),
             lba,
             sectors,
-            mode_id(mode),
+            format_id(format),
             &mut buffer,
             &mut len,
             &mut error,
@@ -36,23 +36,23 @@ pub(super) fn read_cd_chunk(
 }
 
 // Discriminant understood by the native `read_cd_sectors` implementation.
-fn mode_id(mode: SectorReadMode) -> u32 {
-    match mode {
-        SectorReadMode::Audio => 0,
-        SectorReadMode::DataCooked => 1,
-        SectorReadMode::DataRaw => 2,
+fn format_id(format: SectorReadFormat) -> u32 {
+    match format {
+        SectorReadFormat::Audio => 0,
+        SectorReadFormat::Mode1Cooked => 1,
+        SectorReadFormat::Mode1Raw => 2,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::mode_id;
-    use crate::SectorReadMode;
+    use super::format_id;
+    use crate::SectorReadFormat;
 
     #[test]
-    fn maps_sector_modes_to_native_ids() {
-        assert_eq!(mode_id(SectorReadMode::Audio), 0);
-        assert_eq!(mode_id(SectorReadMode::DataCooked), 1);
-        assert_eq!(mode_id(SectorReadMode::DataRaw), 2);
+    fn maps_sector_formats_to_native_ids() {
+        assert_eq!(format_id(SectorReadFormat::Audio), 0);
+        assert_eq!(format_id(SectorReadFormat::Mode1Cooked), 1);
+        assert_eq!(format_id(SectorReadFormat::Mode1Raw), 2);
     }
 }

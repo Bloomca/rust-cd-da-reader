@@ -31,7 +31,7 @@ unsafe extern "C" {
         fd: libc::c_int,
         lba: u32,
         sectors: u32,
-        mode_id: u32,
+        format_id: u32,
         out_buf: *mut *mut u8,
         out_len: *mut u32,
         out_err: *mut MacScsiError,

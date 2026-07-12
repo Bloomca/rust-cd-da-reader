@@ -145,7 +145,7 @@ mod read_loop;
 mod retry;
 mod stream;
 mod utils;
-pub use data_reader::{ReadOptions, SectorReadMode};
+pub use data_reader::{ReadOptions, SectorReadFormat};
 pub use discovery::DriveInfo;
 pub use errors::{CdReaderError, ScsiError, ScsiOp};
 pub use retry::RetryConfig;
@@ -271,13 +271,13 @@ impl CdReader {
         sectors: u32,
         options: &ReadOptions,
     ) -> Result<Vec<u8>, CdReaderError> {
-        let mode = options.mode();
+        let format = options.format();
         read_loop::read_sectors_chunked(
             start_lba,
             sectors,
-            mode,
+            format,
             options.retry(),
-            |lba, chunk_sectors| self.drive.read_cd_chunk(lba, chunk_sectors, mode),
+            |lba, chunk_sectors| self.drive.read_cd_chunk(lba, chunk_sectors, format),
         )
     }
 }

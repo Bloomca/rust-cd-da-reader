@@ -1,17 +1,18 @@
 #include "shim_common.h"
 
-// Map our SectorReadMode discriminant to the macOS CD sector area/type and the
-// resulting bytes-per-sector. Keeping the mapping here (rather than in Rust)
-// means the IOKit constants only ever appear where their header is imported.
+// Map our SectorReadFormat discriminant to the macOS CD sector area/type and
+// the resulting bytes-per-sector. Keeping the mapping here (rather than in
+// Rust) means the IOKit constants only ever appear where their header is
+// imported.
 //
-//   0 = Audio       -> user area, CDDA,  2352 B/sector
-//   1 = DataCooked  -> user area, Mode 1, 2048 B/sector
-//   2 = DataRaw     -> sync+header+user+aux, Mode 1, 2352 B/sector
-static bool sector_layout_for_mode(uint32_t mode_id,
+//   0 = Audio        -> user area, CDDA,  2352 B/sector
+//   1 = Mode1Cooked  -> user area, Mode 1, 2048 B/sector
+//   2 = Mode1Raw     -> sync+header+user+aux, Mode 1, 2352 B/sector
+static bool sector_layout_for_format(uint32_t format_id,
                                    CDSectorArea *outArea,
                                    CDSectorType *outType,
                                    uint32_t *outSectorSize) {
-    switch (mode_id) {
+    switch (format_id) {
         case 0:
             *outArea = kCDSectorAreaUser;
             *outType = kCDSectorTypeCDDA;
@@ -33,7 +34,7 @@ static bool sector_layout_for_mode(uint32_t mode_id,
     }
 }
 
-bool read_cd_sectors(int fd, uint32_t lba, uint32_t sectors, uint32_t mode_id,
+bool read_cd_sectors(int fd, uint32_t lba, uint32_t sectors, uint32_t format_id,
                      uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr) {
     *outBuf = NULL;
     *outLen = 0;
@@ -44,8 +45,8 @@ bool read_cd_sectors(int fd, uint32_t lba, uint32_t sectors, uint32_t mode_id,
     CDSectorArea sectorArea;
     CDSectorType sectorType;
     uint32_t sectorSize;
-    if (!sector_layout_for_mode(mode_id, &sectorArea, &sectorType, &sectorSize)) {
-        fprintf(stderr, "[READ] unknown sector mode %u\n", mode_id);
+    if (!sector_layout_for_format(format_id, &sectorArea, &sectorType, &sectorSize)) {
+        fprintf(stderr, "[READ] unknown sector format %u\n", format_id);
         goto fail;
     }
 
