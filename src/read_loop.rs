@@ -8,10 +8,10 @@
 
 use std::thread::sleep;
 
-use crate::data_reader::SectorReadMode;
+use crate::data_reader::SectorReadFormat;
 use crate::{CdReaderError, RetryConfig};
 
-/// Read `sectors` sectors starting at `start_lba` in the given `mode`.
+/// Read `sectors` sectors starting at `start_lba` in the given `format`.
 ///
 /// `read_chunk(lba, sectors)` performs one platform-specific `READ CD`
 /// command and returns the raw bytes for that chunk. The loop owns chunk
@@ -20,7 +20,7 @@ use crate::{CdReaderError, RetryConfig};
 pub(crate) fn read_sectors_chunked<F>(
     start_lba: u32,
     sectors: u32,
-    mode: SectorReadMode,
+    format: SectorReadFormat,
     cfg: &RetryConfig,
     mut read_chunk: F,
 ) -> Result<Vec<u8>, CdReaderError>
@@ -32,9 +32,9 @@ where
     }
 
     let total_bytes = (sectors as usize)
-        .checked_mul(mode.sector_size())
+        .checked_mul(format.sector_size())
         .ok_or_else(|| invalid_input("requested byte count is too large"))?;
-    let max_sectors_per_xfer = mode.max_sectors_per_xfer();
+    let max_sectors_per_xfer = format.max_sectors_per_xfer();
     let mut out = Vec::<u8>::new();
     out.try_reserve_exact(total_bytes)
         .map_err(|_| invalid_input("could not allocate the requested output buffer"))?;
@@ -51,7 +51,7 @@ where
 
         for attempt in 1..=attempts_total {
             let result = read_chunk(lba, chunk_sectors).and_then(|chunk| {
-                let expected_len = (chunk_sectors as usize) * mode.sector_size();
+                let expected_len = (chunk_sectors as usize) * format.sector_size();
                 if chunk.len() != expected_len {
                     return Err(CdReaderError::Io(std::io::Error::new(
                         std::io::ErrorKind::UnexpectedEof,
@@ -120,7 +120,7 @@ mod tests {
     use std::time::Duration;
 
     use super::read_sectors_chunked;
-    use crate::{CdReaderError, RetryConfig, SectorReadMode};
+    use crate::{CdReaderError, RetryConfig, SectorReadFormat};
 
     fn retry_config(max_attempts: u8, reduce_chunk_on_retry: bool) -> RetryConfig {
         RetryConfig::default()
@@ -136,7 +136,7 @@ mod tests {
         let data = read_sectors_chunked(
             100,
             60,
-            SectorReadMode::Audio,
+            SectorReadFormat::Audio,
             &retry_config(1, false),
             |lba, sectors| {
                 calls.push((lba, sectors));
@@ -156,7 +156,7 @@ mod tests {
         let data = read_sectors_chunked(
             100,
             10,
-            SectorReadMode::Audio,
+            SectorReadFormat::Audio,
             &retry_config(2, true),
             |lba, sectors| {
                 calls.push((lba, sectors));
@@ -181,7 +181,7 @@ mod tests {
         let data = read_sectors_chunked(
             200,
             2,
-            SectorReadMode::DataCooked,
+            SectorReadFormat::Mode1Cooked,
             &retry_config(2, false),
             |lba, sectors| {
                 calls.push((lba, sectors));
@@ -204,7 +204,7 @@ mod tests {
         let err = read_sectors_chunked(
             u32::MAX,
             2,
-            SectorReadMode::Audio,
+            SectorReadFormat::Audio,
             &retry_config(1, false),
             |_, _| {
                 called = true;

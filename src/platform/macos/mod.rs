@@ -5,7 +5,7 @@ mod toc;
 
 pub(crate) use device::{Drive, list_drive_paths};
 
-use crate::{CdReaderError, SectorReadMode, Toc};
+use crate::{CdReaderError, SectorReadFormat, Toc};
 
 impl Drive {
     pub(crate) fn read_toc(&self) -> Result<Toc, CdReaderError> {
@@ -16,8 +16,8 @@ impl Drive {
         &self,
         lba: u32,
         sectors: u32,
-        mode: SectorReadMode,
+        format: SectorReadFormat,
     ) -> Result<Vec<u8>, CdReaderError> {
-        read_cd::read_cd_chunk(self, lba, sectors, mode)
+        read_cd::read_cd_chunk(self, lba, sectors, format)
     }
 }
