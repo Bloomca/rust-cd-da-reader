@@ -13,7 +13,6 @@ impl Drive {
         toc::read_toc(self)
     }
 
-    #[allow(dead_code)]
     pub(crate) fn read_track_information(
         &self,
         track_number: u8,
