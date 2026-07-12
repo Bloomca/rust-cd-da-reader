@@ -48,7 +48,7 @@ pub enum CdReaderError {
     CannotDetectTrackFormat {
         /// Track number from the TOC.
         track_number: u8,
-        /// Unrecognized MMC Data Mode value, when one was reported.
+        /// MMC Data Mode value that was reported, when available.
         data_mode: Option<u8>,
     },
     /// Drive enumeration completed without finding a usable audio CD.
@@ -70,7 +70,7 @@ impl fmt::Display for CdReaderError {
                 data_mode: Some(data_mode),
             } => write!(
                 f,
-                "could not detect sector format for track {track_number}: unknown MMC data mode 0x{data_mode:02x}"
+                "could not detect sector format for track {track_number} from MMC data mode 0x{data_mode:02x}"
             ),
             Self::CannotDetectTrackFormat {
                 track_number,

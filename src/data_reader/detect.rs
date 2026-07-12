@@ -19,14 +19,15 @@ impl CdReader {
     }
 }
 
-/// Map the MMC READ TRACK INFORMATION Data Mode field to the default cooked
-/// representation for that physical sector layout.
+/// Map the MMC READ TRACK INFORMATION Data Mode field to an unambiguous
+/// default read format.
+///
+/// MMC reports `0x01` for Mode 1 and `0x02` for Mode 2. Track Information does
+/// not identify the per-sector Mode 2 form, so Mode 2 requires raw inspection
+/// before a read format can be selected.
 fn format_from_data_mode(data_mode: u8) -> Option<SectorReadFormat> {
     match data_mode {
-        0x00 => Some(SectorReadFormat::Mode1Cooked),
-        0x01 => Some(SectorReadFormat::Mode2FormlessCooked),
-        0x02 => Some(SectorReadFormat::Mode2Form1Cooked),
-        0x03 => Some(SectorReadFormat::Mode2Form2Cooked),
+        0x01 => Some(SectorReadFormat::Mode1Cooked),
         _ => None,
     }
 }
@@ -52,28 +53,22 @@ mod tests {
     }
 
     #[test]
-    fn maps_known_mmc_data_modes_to_cooked_formats() {
-        assert_eq!(
-            format_from_data_mode(0x00),
-            Some(SectorReadFormat::Mode1Cooked)
-        );
+    fn maps_mode1_to_its_cooked_format() {
         assert_eq!(
             format_from_data_mode(0x01),
-            Some(SectorReadFormat::Mode2FormlessCooked)
-        );
-        assert_eq!(
-            format_from_data_mode(0x02),
-            Some(SectorReadFormat::Mode2Form1Cooked)
-        );
-        assert_eq!(
-            format_from_data_mode(0x03),
-            Some(SectorReadFormat::Mode2Form2Cooked)
+            Some(SectorReadFormat::Mode1Cooked)
         );
     }
 
     #[test]
+    fn mode2_requires_raw_sector_inspection() {
+        assert_eq!(format_from_data_mode(0x02), None);
+    }
+
+    #[test]
     fn rejects_unknown_or_reserved_mmc_data_modes() {
-        for data_mode in 0x04..=0x0F {
+        assert_eq!(format_from_data_mode(0x00), None);
+        for data_mode in 0x03..=0x0F {
             assert_eq!(format_from_data_mode(data_mode), None);
         }
     }
