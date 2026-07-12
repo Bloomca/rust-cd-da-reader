@@ -2,20 +2,41 @@ use std::cmp::min;
 
 use crate::{CdReader, CdReaderError, ReadOptions, RetryConfig, SectorReadMode, Toc, utils};
 
-/// Configuration for streamed track reads.
+/// Options for streamed track reads.
+///
+/// The defaults read audio sectors in chunks of 27 using the default retry
+/// policy. Use the builder methods to override only the options you need.
 #[derive(Debug, Clone)]
-pub struct TrackStreamConfig {
-    /// Target chunk size in sectors for each `next_chunk` call.
-    ///
-    /// The byte size of a chunk also depends on [`SectorReadMode`].
-    pub sectors_per_chunk: u32,
-    /// Sector format requested from the drive.
-    pub mode: SectorReadMode,
-    /// Retry policy applied to each chunk read.
-    pub retry: RetryConfig,
+pub struct TrackStreamOptions {
+    sectors_per_chunk: u32,
+    mode: SectorReadMode,
+    retry: RetryConfig,
 }
 
-impl Default for TrackStreamConfig {
+impl TrackStreamOptions {
+    /// Select the sector format requested from the drive.
+    pub fn with_mode(mut self, mode: SectorReadMode) -> Self {
+        self.mode = mode;
+        self
+    }
+
+    /// Set the retry policy applied to each chunk read.
+    pub fn with_retry(mut self, retry: RetryConfig) -> Self {
+        self.retry = retry;
+        self
+    }
+
+    /// Set the target chunk size in sectors.
+    ///
+    /// The byte size of a chunk also depends on [`SectorReadMode`]. A value of
+    /// zero is normalized to one sector.
+    pub fn with_sectors_per_chunk(mut self, sectors: u32) -> Self {
+        self.sectors_per_chunk = sectors.max(1);
+        self
+    }
+}
+
+impl Default for TrackStreamOptions {
     fn default() -> Self {
         Self {
             sectors_per_chunk: 27,
@@ -35,7 +56,7 @@ pub struct TrackStream<'a> {
     next_lba: u32,
     remaining_sectors: u32,
     total_sectors: u32,
-    cfg: TrackStreamConfig,
+    options: TrackStreamOptions,
 }
 
 impl<'a> TrackStream<'a> {
@@ -44,7 +65,7 @@ impl<'a> TrackStream<'a> {
     /// Read the next chunk of sector data.
     ///
     /// Returns `Ok(None)` when end-of-track is reached. The bytes per sector
-    /// depend on the [`SectorReadMode`] in [`TrackStreamConfig`].
+    /// depend on the [`SectorReadMode`] selected in [`TrackStreamOptions`].
     pub fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, CdReaderError> {
         self.next_chunk_with(|lba, sectors, mode, retry| {
             let options = ReadOptions {
@@ -63,8 +84,13 @@ impl<'a> TrackStream<'a> {
             return Ok(None);
         }
 
-        let sectors = min(self.remaining_sectors, self.cfg.sectors_per_chunk.max(1));
-        let chunk = read_fn(self.next_lba, sectors, self.cfg.mode, &self.cfg.retry)?;
+        let sectors = min(self.remaining_sectors, self.options.sectors_per_chunk);
+        let chunk = read_fn(
+            self.next_lba,
+            sectors,
+            self.options.mode,
+            &self.options.retry,
+        )?;
 
         self.next_lba += sectors;
         self.remaining_sectors -= sectors;
@@ -140,12 +166,12 @@ impl CdReader {
     /// drive session is managed through a single CDReader instance.
     ///
     /// Use [`TrackStream::next_chunk`] to pull sector-aligned chunks in the
-    /// format selected by [`TrackStreamConfig::mode`].
+    /// format selected in [`TrackStreamOptions`].
     pub fn open_track_stream<'a>(
         &'a self,
         toc: &Toc,
         track_no: u8,
-        cfg: TrackStreamConfig,
+        options: TrackStreamOptions,
     ) -> Result<TrackStream<'a>, CdReaderError> {
         let (start_lba, sectors) =
             utils::get_track_bounds(toc, track_no).map_err(CdReaderError::Io)?;
@@ -156,15 +182,15 @@ impl CdReader {
             next_lba: start_lba,
             remaining_sectors: sectors,
             total_sectors: sectors,
-            cfg,
+            options,
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{TrackStream, TrackStreamConfig};
-    use crate::{CdReader, CdReaderError, SectorReadMode};
+    use super::{TrackStream, TrackStreamOptions};
+    use crate::{CdReader, CdReaderError, RetryConfig, SectorReadMode};
 
     fn mk_stream(
         start_lba: u32,
@@ -178,11 +204,24 @@ mod tests {
             next_lba: start_lba,
             remaining_sectors: total_sectors,
             total_sectors,
-            cfg: TrackStreamConfig {
-                sectors_per_chunk,
-                ..TrackStreamConfig::default()
-            },
+            options: TrackStreamOptions::default().with_sectors_per_chunk(sectors_per_chunk),
         }
+    }
+
+    #[test]
+    fn options_builders_override_individual_defaults() {
+        let retry = RetryConfig {
+            max_attempts: 9,
+            ..RetryConfig::default()
+        };
+        let options = TrackStreamOptions::default()
+            .with_mode(SectorReadMode::DataRaw)
+            .with_retry(retry)
+            .with_sectors_per_chunk(0);
+
+        assert_eq!(options.mode, SectorReadMode::DataRaw);
+        assert_eq!(options.retry.max_attempts, 9);
+        assert_eq!(options.sectors_per_chunk, 1);
     }
 
     #[test]
@@ -229,7 +268,7 @@ mod tests {
     #[test]
     fn next_chunk_uses_configured_mode_and_advances() {
         let mut stream = mk_stream(10_000, 100, 27);
-        stream.cfg.mode = SectorReadMode::DataCooked;
+        stream.options = stream.options.with_mode(SectorReadMode::DataCooked);
         let mut called = false;
 
         let chunk = stream

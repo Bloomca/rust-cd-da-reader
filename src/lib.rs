@@ -85,18 +85,14 @@
 //! use the streaming API instead:
 //!
 //! ```no_run
-//! use cd_da_reader::{CdReader, RetryConfig, SectorReadMode, TrackStreamConfig};
+//! use cd_da_reader::{CdReader, TrackStreamOptions};
 //!
 //! let reader = CdReader::open_default()?;
 //! let toc = reader.read_toc()?;
 //!
-//! let cfg = TrackStreamConfig {
-//!     sectors_per_chunk: 27, // ~64 KB per audio chunk
-//!     mode: SectorReadMode::Audio,
-//!     retry: RetryConfig::default(),
-//! };
+//! let options = TrackStreamOptions::default();
 //!
-//! let mut stream = reader.open_track_stream(&toc, 1, cfg)?;
+//! let mut stream = reader.open_track_stream(&toc, 1, options)?;
 //! while let Some(chunk) = stream.next_chunk()? {
 //!     // process chunk — raw PCM, 2 352 bytes per sector
 //! }
@@ -155,7 +151,7 @@ pub use data_reader::{ReadOptions, SectorReadMode};
 pub use discovery::DriveInfo;
 pub use errors::{CdReaderError, ScsiError, ScsiOp};
 pub use retry::RetryConfig;
-pub use stream::{TrackStream, TrackStreamConfig};
+pub use stream::{TrackStream, TrackStreamOptions};
 
 mod parse_toc;
 

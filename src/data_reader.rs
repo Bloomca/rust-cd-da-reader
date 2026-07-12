@@ -71,7 +71,7 @@ impl SectorReadMode {
     /// This is the sole chunker for the blocking `read_track` /
     /// `read_sector_range` paths, which can hand a whole track (tens of thousands
     /// of sectors) straight to the read loop; the streaming API already limits
-    /// itself via `TrackStreamConfig::sectors_per_chunk`. The cap is not about
+    /// itself via its `TrackStreamOptions` chunk size. The cap is not about
     /// OS pass-through limits (modern SG_IO/SPTI handle far larger transfers)
     /// but about optical-drive firmware and USB-bridge reliability: large
     /// multi-sector `READ CD` requests are flaky across the zoo of drives. The
