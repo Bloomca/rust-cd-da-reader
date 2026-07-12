@@ -3,11 +3,14 @@
 /// By default, it already retries multiple times with smaller number
 /// of sectors, so this usually should not be necessary, but you can see
 /// here that you can tweak details.
+mod common;
+
 use std::time::Duration;
 
 use cd_da_reader::{CdReader, ReadOptions, RetryConfig};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let output_dir = common::fresh_output_dir("custom_retry")?;
     let reader = CdReader::open_default()?;
     let toc = reader.read_toc()?;
 
@@ -34,9 +37,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data = reader.read_track_with_options(&toc, first_audio.number, &options)?;
 
     let wav = CdReader::create_wav(data);
-    let filename = format!("track{:02}.wav", first_audio.number);
-    std::fs::write(&filename, wav)?;
-    println!("Saved {}", filename);
+    let output_path = output_dir.join(format!("track{:02}.wav", first_audio.number));
+    std::fs::write(&output_path, wav)?;
+    println!("Saved {}", output_path.display());
 
     Ok(())
 }

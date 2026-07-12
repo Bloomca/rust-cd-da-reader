@@ -13,15 +13,20 @@
 //!   cargo run --example play_audio_track            # first 30 seconds
 //!   cargo run --example play_audio_track -- 60      # first 60 seconds
 //!
-//! The WAV is written to the current directory and then handed to the platform's
-//! built-in player (`afplay` on macOS, `Media.SoundPlayer` on Windows). On other
-//! platforms it is saved and you are told how to play it yourself.
+//! The WAV is written under `target/example-output` and then handed to the
+//! platform's built-in player (`afplay` on macOS, `Media.SoundPlayer` on
+//! Windows). On other platforms it is saved for playback with another player.
+mod common;
+
+use std::path::Path;
+
 use cd_da_reader::{CdReader, ReadOptions};
 
 /// CD-DA plays 75 sectors (each 2352 bytes) per second.
 const SECTORS_PER_SECOND: u32 = 75;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let output_dir = common::fresh_output_dir("play_audio_track")?;
     let seconds: u32 = match std::env::args().nth(1) {
         Some(a) => a.parse()?,
         None => 30,
@@ -60,16 +65,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         pcm.len() as f64 / (1024.0 * 1024.0)
     );
 
-    let filename = format!("track{:02}_preview.wav", track.number);
-    std::fs::write(&filename, CdReader::create_wav(pcm))?;
-    println!("Saved {filename}");
+    let output_path = output_dir.join(format!("track{:02}_preview.wav", track.number));
+    std::fs::write(&output_path, CdReader::create_wav(pcm))?;
+    println!("Saved {}", output_path.display());
 
-    play(&filename)
+    play(&output_path)
 }
 
 /// Hand the WAV to the OS's built-in player and block until it finishes.
 #[cfg(target_os = "macos")]
-fn play(path: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn play(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     println!("Playing (Ctrl+C to stop)...");
     let status = std::process::Command::new("afplay").arg(path).status()?;
     if !status.success() {
@@ -79,10 +84,11 @@ fn play(path: &str) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[cfg(target_os = "windows")]
-fn play(path: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn play(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     println!("Playing (this blocks until the preview ends)...");
     // SoundPlayer.PlaySync plays a WAV synchronously using the built-in player.
-    let script = format!("(New-Object Media.SoundPlayer '{path}').PlaySync()");
+    let escaped_path = path.display().to_string().replace('\'', "''");
+    let script = format!("(New-Object Media.SoundPlayer '{escaped_path}').PlaySync()");
     let status = std::process::Command::new("powershell")
         .args(["-NoProfile", "-Command", &script])
         .status()?;
@@ -93,7 +99,10 @@ fn play(path: &str) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-fn play(path: &str) -> Result<(), Box<dyn std::error::Error>> {
-    println!("Saved the WAV — play it with your audio player, e.g. `aplay {path}`.");
+fn play(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    println!(
+        "Saved the WAV — play it with your audio player, e.g. `aplay {}`.",
+        path.display()
+    );
     Ok(())
 }
