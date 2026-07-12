@@ -11,16 +11,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Found {} drive(s):\n", drives.len());
     for drive in &drives {
-        let name = drive.display_name.as_deref().unwrap_or("(unknown)");
         let status = if drive.has_audio_cd {
             "audio CD inserted"
         } else {
             "no audio CD"
         };
-        println!(
-            "Drive: {}, name: {}, status: [{}]",
-            drive.path, name, status
-        );
+        println!("Drive: {}, status: [{status}]", drive.path);
     }
 
     Ok(())
