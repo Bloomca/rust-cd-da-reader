@@ -30,8 +30,6 @@ typedef struct {
 
 typedef struct {
     char bsd_name[64];
-    uint8_t has_toc;
-    uint8_t has_audio;
 } CdDriveInfo;
 
 bool cd_read_toc(int fd, uint8_t **outBuf, uint32_t *outLen, CdScsiError *outErr);

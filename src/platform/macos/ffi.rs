@@ -17,8 +17,6 @@ pub(super) struct MacScsiError {
 #[derive(Debug, Clone, Copy)]
 pub(super) struct MacDriveInfo {
     pub(super) bsd_name: [libc::c_char; 64],
-    pub(super) has_toc: u8,
-    pub(super) has_audio: u8,
 }
 
 #[link(name = "macos_cd_shim", kind = "static")]
