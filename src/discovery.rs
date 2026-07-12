@@ -16,7 +16,7 @@ pub struct DriveInfo {
 impl CdReader {
     /// Enumerate candidate optical drives and probe whether they currently have an audio CD.
     pub fn list_drives() -> Result<Vec<DriveInfo>, CdReaderError> {
-        let mut paths = crate::platform::list_drive_paths().map_err(CdReaderError::Io)?;
+        let mut paths = crate::platform::list_drive_paths()?;
         paths.sort();
         paths.dedup();
 
@@ -43,14 +43,9 @@ impl CdReader {
     /// Open the first discovered drive that currently has an audio CD.
     pub fn open_default() -> Result<Self, CdReaderError> {
         let drives = Self::list_drives()?;
-        let chosen = pick_default_drive_path(&drives).ok_or_else(|| {
-            CdReaderError::Io(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "no usable audio CD drive found",
-            ))
-        })?;
+        let chosen = pick_default_drive_path(&drives).ok_or(CdReaderError::NoUsableDrive)?;
 
-        Self::open(chosen).map_err(CdReaderError::Io)
+        Self::open(chosen)
     }
 }
 
