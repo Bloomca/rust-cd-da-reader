@@ -69,7 +69,7 @@ impl SectorReadMode {
     /// Maximum sectors per single `READ CD` command.
     ///
     /// This is the sole chunker for the blocking `read_track` /
-    /// `read_data_sectors` paths, which hand a whole track (tens of thousands
+    /// `read_sector_range` paths, which can hand a whole track (tens of thousands
     /// of sectors) straight to the read loop; the streaming API already limits
     /// itself via `TrackStreamConfig::sectors_per_chunk`. The cap is not about
     /// OS pass-through limits (modern SG_IO/SPTI handle far larger transfers)

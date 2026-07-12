@@ -9,7 +9,7 @@
 ///      Volume Descriptor — type byte `0x01` followed by `"CD001"`.
 ///   3. Cooked vs raw: the cooked 2048 B must equal the user-data region of
 ///      the raw sector (offset 16 for Mode 1).
-use cd_da_reader::{CdReader, RetryConfig, SectorReadMode};
+use cd_da_reader::{CdReader, ReadOptions, SectorReadMode};
 
 // ISO 9660 places the Primary Volume Descriptor at logical sector 16.
 const PVD_SECTOR_OFFSET: u32 = 16;
@@ -30,10 +30,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         data_track.number, data_track.start_lba, pvd_lba
     );
 
-    let cfg = RetryConfig::default();
+    let mut options = ReadOptions {
+        mode: SectorReadMode::DataRaw,
+        ..ReadOptions::default()
+    };
 
     // --- raw read (2352 B) -------------------------------------------------
-    let raw = reader.read_data_sectors(pvd_lba, 1, SectorReadMode::DataRaw, &cfg)?;
+    let raw = reader.read_sector_range(pvd_lba, 1, &options)?;
     if raw.len() != 2352 {
         return Err(format!("raw read returned {} bytes, expected 2352", raw.len()).into());
     }
@@ -58,7 +61,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --- cooked read (2048 B) ---------------------------------------------
     // Our cooked mode maps to Mode 1; only meaningful to cross-check there.
     if mode == 1 {
-        let cooked = reader.read_data_sectors(pvd_lba, 1, SectorReadMode::DataCooked, &cfg)?;
+        options.mode = SectorReadMode::DataCooked;
+        let cooked = reader.read_sector_range(pvd_lba, 1, &options)?;
         if cooked.len() != 2048 {
             return Err(
                 format!("cooked read returned {} bytes, expected 2048", cooked.len()).into(),
