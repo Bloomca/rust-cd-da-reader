@@ -216,10 +216,7 @@ mod tests {
 
     #[test]
     fn options_builders_override_individual_defaults() {
-        let retry = RetryConfig {
-            max_attempts: 9,
-            ..RetryConfig::default()
-        };
+        let retry = RetryConfig::default().with_max_attempts(9);
         let options = TrackStreamOptions::default()
             .with_mode(SectorReadMode::DataRaw)
             .with_retry(retry)

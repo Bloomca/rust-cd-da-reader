@@ -7,7 +7,6 @@
 //! macOS) is platform-specific, so it is injected as a closure.
 
 use std::thread::sleep;
-use std::time::Duration;
 
 use crate::data_reader::SectorReadMode;
 use crate::{CdReaderError, RetryConfig};
@@ -47,7 +46,7 @@ where
 
     while remaining > 0 {
         let mut chunk_sectors = remaining.min(max_sectors_per_xfer);
-        let mut backoff_ms = cfg.initial_backoff_ms;
+        let mut backoff = cfg.initial_backoff.min(cfg.max_backoff);
         let mut last_err: Option<CdReaderError> = None;
 
         for attempt in 1..=attempts_total {
@@ -83,12 +82,10 @@ where
                     if cfg.reduce_chunk_on_retry && chunk_sectors > min_chunk {
                         chunk_sectors = next_chunk_size(chunk_sectors, min_chunk);
                     }
-                    if backoff_ms > 0 {
-                        sleep(Duration::from_millis(backoff_ms));
+                    if !backoff.is_zero() {
+                        sleep(backoff);
                     }
-                    if cfg.max_backoff_ms > 0 {
-                        backoff_ms = (backoff_ms.saturating_mul(2)).min(cfg.max_backoff_ms);
-                    }
+                    backoff = backoff.saturating_mul(2).min(cfg.max_backoff);
                 }
             }
         }
@@ -120,17 +117,17 @@ fn next_chunk_size(current: u32, min_chunk: u32) -> u32 {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::read_sectors_chunked;
     use crate::{CdReaderError, RetryConfig, SectorReadMode};
 
     fn retry_config(max_attempts: u8, reduce_chunk_on_retry: bool) -> RetryConfig {
-        RetryConfig {
-            max_attempts,
-            initial_backoff_ms: 0,
-            max_backoff_ms: 0,
-            reduce_chunk_on_retry,
-            min_sectors_per_read: 1,
-        }
+        RetryConfig::default()
+            .with_max_attempts(max_attempts)
+            .with_initial_backoff(Duration::ZERO)
+            .with_max_backoff(Duration::ZERO)
+            .with_chunk_reduction(reduce_chunk_on_retry)
     }
 
     #[test]
