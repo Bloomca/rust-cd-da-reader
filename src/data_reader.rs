@@ -130,10 +130,7 @@ mod tests {
     fn read_options_builders_override_individual_defaults() {
         assert_eq!(ReadOptions::default().mode(), SectorReadMode::Audio);
 
-        let retry = crate::RetryConfig {
-            max_attempts: 9,
-            ..crate::RetryConfig::default()
-        };
+        let retry = crate::RetryConfig::default().with_max_attempts(9);
         let options = ReadOptions::default()
             .with_mode(SectorReadMode::DataRaw)
             .with_retry(retry);

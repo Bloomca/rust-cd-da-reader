@@ -1,42 +1,109 @@
-/// Retry policy for idempotent read operations.
+use std::time::Duration;
+
+/// Retry policy for read operations.
 ///
-/// The policy is applied per failed read chunk/command and can combine
-/// capped exponential backoff with adaptive chunk-size reduction.
+/// The policy is applied when we fail to read a chunk, and it will both
+/// wait a bit before attempting the next read and will decrease the number
+/// of chunks to read. The default values are aimed to be universally good
+/// and unless you have specific requirements using RetryConfig::default()
+/// is recommended.
+///
+/// The default policy uses:
+///
+/// - 4 attempts, including the initial read;
+/// - a 20 ms initial backoff;
+/// - a 300 ms maximum backoff;
+/// - adaptive chunk reduction;
+/// - a minimum chunk size of 1 sector.
 #[derive(Debug, Clone)]
 pub struct RetryConfig {
-    /// Maximum attempts per operation, including the initial attempt.
-    /// By default the value is 4.
+    pub(crate) max_attempts: u8,
+    pub(crate) initial_backoff: Duration,
+    pub(crate) max_backoff: Duration,
+    pub(crate) reduce_chunk_on_retry: bool,
+    pub(crate) min_sectors_per_read: u32,
+}
+
+impl RetryConfig {
+    /// Set the maximum attempts per operation, including the initial attempt.
     ///
-    /// Values below `1` are normalized by callers to at least one attempt.
-    pub max_attempts: u8,
-    /// Initial backoff delay in milliseconds before the second attempt.
-    /// First attempt is always immediate, so if there are no issues during
-    /// reading, we don't wait any time.
-    pub initial_backoff_ms: u64,
-    /// Upper bound for exponential backoff delay in milliseconds.
+    /// A value of zero is normalized to one attempt.
+    pub fn with_max_attempts(mut self, attempts: u8) -> Self {
+        self.max_attempts = attempts.max(1);
+        self
+    }
+
+    /// Set the delay before the second attempt.
     ///
-    /// Each retry typically doubles the previous delay until this cap is reached.
-    pub max_backoff_ms: u64,
-    /// Enable adaptive sector-count reduction on retry for `READ CD` operations.
+    /// The first attempt is always immediate.
+    pub fn with_initial_backoff(mut self, backoff: Duration) -> Self {
+        self.initial_backoff = backoff;
+        self
+    }
+
+    /// Set the upper bound for exponential backoff delays.
     ///
-    /// Current implementation reduces chunk size from large reads toward smaller
-    /// reads (for example `27 -> 8 -> 1`) to have a higher change of success.
-    pub reduce_chunk_on_retry: bool,
-    /// Minimum sectors per `READ CD` command when adaptive reduction is enabled.
-    /// Default value is 27 for 64KB per read.
+    /// A duration of zero disables retry delays.
+    pub fn with_max_backoff(mut self, backoff: Duration) -> Self {
+        self.max_backoff = backoff;
+        self
+    }
+
+    /// Enable or disable adaptive sector-count reduction after failed reads.
+    pub fn with_chunk_reduction(mut self, enabled: bool) -> Self {
+        self.reduce_chunk_on_retry = enabled;
+        self
+    }
+
+    /// Set the minimum sectors per command when adaptive reduction is enabled.
     ///
-    /// Use `1` for maximal fault isolation; larger values can improve throughput.
-    pub min_sectors_per_read: u32,
+    /// A value of zero is normalized to one sector.
+    pub fn with_min_sectors_per_read(mut self, sectors: u32) -> Self {
+        self.min_sectors_per_read = sectors.max(1);
+        self
+    }
 }
 
 impl Default for RetryConfig {
     fn default() -> Self {
         Self {
             max_attempts: 4,
-            initial_backoff_ms: 20,
-            max_backoff_ms: 300,
+            initial_backoff: Duration::from_millis(20),
+            max_backoff: Duration::from_millis(300),
             reduce_chunk_on_retry: true,
             min_sectors_per_read: 1,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_policy_matches_documented_values() {
+        let config = RetryConfig::default();
+
+        assert_eq!(config.max_attempts, 4);
+        assert_eq!(config.initial_backoff, Duration::from_millis(20));
+        assert_eq!(config.max_backoff, Duration::from_millis(300));
+        assert!(config.reduce_chunk_on_retry);
+        assert_eq!(config.min_sectors_per_read, 1);
+    }
+
+    #[test]
+    fn builders_override_and_normalize_values() {
+        let config = RetryConfig::default()
+            .with_max_attempts(0)
+            .with_initial_backoff(Duration::from_millis(50))
+            .with_max_backoff(Duration::from_secs(1))
+            .with_chunk_reduction(false)
+            .with_min_sectors_per_read(0);
+
+        assert_eq!(config.max_attempts, 1);
+        assert_eq!(config.initial_backoff, Duration::from_millis(50));
+        assert_eq!(config.max_backoff, Duration::from_secs(1));
+        assert!(!config.reduce_chunk_on_retry);
+        assert_eq!(config.min_sectors_per_read, 1);
     }
 }

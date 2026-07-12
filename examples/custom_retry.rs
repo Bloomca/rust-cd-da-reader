@@ -3,6 +3,8 @@
 /// By default, it already retries multiple times with smaller number
 /// of sectors, so this usually should not be necessary, but you can see
 /// here that you can tweak details.
+use std::time::Duration;
+
 use cd_da_reader::{CdReader, ReadOptions, RetryConfig};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -17,13 +19,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // More attempts, longer backoff, and sector reduction down to 1
     // for maximum resilience on scratched media.
-    let retry = RetryConfig {
-        max_attempts: 8,
-        initial_backoff_ms: 50,
-        max_backoff_ms: 1000,
-        reduce_chunk_on_retry: true,
-        min_sectors_per_read: 1,
-    };
+    let retry = RetryConfig::default()
+        .with_max_attempts(8)
+        .with_initial_backoff(Duration::from_millis(50))
+        .with_max_backoff(Duration::from_secs(1))
+        .with_chunk_reduction(true)
+        .with_min_sectors_per_read(1);
     let options = ReadOptions::default().with_retry(retry);
 
     println!(
