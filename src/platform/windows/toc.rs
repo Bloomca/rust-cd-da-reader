@@ -1,3 +1,4 @@
+use super::device::Drive;
 use super::spti::{CommandContext, execute_read};
 use crate::parse_toc::parse_toc;
 use crate::{CdReaderError, ScsiOp, Toc};
@@ -5,10 +6,11 @@ use crate::{CdReaderError, ScsiOp, Toc};
 const TOC_BUFFER_SIZE: usize = 2048;
 const TOC_TIMEOUT_SECONDS: u32 = 10;
 
-pub(crate) fn read_toc() -> Result<Toc, CdReaderError> {
+pub(super) fn read_toc(drive: &Drive) -> Result<Toc, CdReaderError> {
     let mut data = vec![0u8; TOC_BUFFER_SIZE];
     let cdb = build_read_toc_cdb(TOC_BUFFER_SIZE);
     let transferred = execute_read(
+        drive.handle(),
         &cdb,
         &mut data,
         TOC_TIMEOUT_SECONDS,

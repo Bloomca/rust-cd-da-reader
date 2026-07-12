@@ -1,9 +1,11 @@
 use std::{ptr, slice};
 
+use super::device::Drive;
 use super::ffi::{MacScsiError, cd_free, map_error, read_cd_sectors};
 use crate::{CdReaderError, ScsiOp, SectorReadMode};
 
-pub(crate) fn read_cd_chunk(
+pub(super) fn read_cd_chunk(
+    drive: &Drive,
     lba: u32,
     sectors: u32,
     mode: SectorReadMode,
@@ -14,6 +16,7 @@ pub(crate) fn read_cd_chunk(
 
     let success = unsafe {
         read_cd_sectors(
+            drive.fd(),
             lba,
             sectors,
             mode_id(mode),

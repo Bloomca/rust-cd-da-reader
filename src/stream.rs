@@ -166,7 +166,7 @@ mod tests {
         total_sectors: u32,
         sectors_per_chunk: u32,
     ) -> TrackStream<'static> {
-        let reader: &'static CdReader = Box::leak(Box::new(CdReader {}));
+        let reader: &'static CdReader = Box::leak(Box::new(CdReader::test_reader()));
         TrackStream {
             reader,
             start_lba,

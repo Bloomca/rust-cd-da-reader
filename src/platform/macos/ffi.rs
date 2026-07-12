@@ -24,11 +24,13 @@ pub(super) struct MacDriveInfo {
 #[link(name = "macos_cd_shim", kind = "static")]
 unsafe extern "C" {
     pub(super) fn cd_read_toc(
+        fd: libc::c_int,
         out_buf: *mut *mut u8,
         out_len: *mut u32,
         out_err: *mut MacScsiError,
     ) -> bool;
     pub(super) fn read_cd_sectors(
+        fd: libc::c_int,
         lba: u32,
         sectors: u32,
         mode_id: u32,
@@ -38,8 +40,7 @@ unsafe extern "C" {
     ) -> bool;
     pub(super) fn cd_free(pointer: *mut libc::c_void);
     pub(super) fn list_cd_drives(out_drives: *mut *mut MacDriveInfo, out_count: *mut u32) -> bool;
-    pub(super) fn open_dev_session(bsd_name: *const libc::c_char) -> bool;
-    pub(super) fn close_dev_session();
+    pub(super) fn open_cd_raw_device(bsd_name: *const libc::c_char) -> libc::c_int;
 }
 
 pub(super) fn map_error(

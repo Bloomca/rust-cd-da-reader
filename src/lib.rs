@@ -191,13 +191,12 @@ pub struct Toc {
     pub leadout_lba: u32,
 }
 
-/// Helper struct to interact with the audio CD. While it doesn't hold any internal data
-/// directly, it implements `Drop` trait, so that the CD drive handle is properly closed.
-///
-/// Please note that you should not read multiple CDs at the same time, and preferably do
-/// not use it in multiple threads. CD drives are physical devices, so currently only
-/// sequential access is properly tested and supported.
-pub struct CdReader {}
+/// Helper struct to interact with the audio CD. Internally it holds a platform-specific
+/// handle to the open CD drive to read from it and it is correctly closed when CDReader
+/// is dropped.
+pub struct CdReader {
+    drive: platform::Drive,
+}
 
 impl CdReader {
     /// Opens a CD drive at the specified path in order to read data.
@@ -216,8 +215,16 @@ impl CdReader {
     ///
     /// Returns an error if the drive cannot be opened
     pub fn open(path: &str) -> std::io::Result<Self> {
-        platform::open_drive(path)?;
-        Ok(Self {})
+        Ok(Self {
+            drive: platform::Drive::open(path)?,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_reader() -> Self {
+        Self {
+            drive: platform::Drive::test_drive(),
+        }
     }
 
     /// While this is a low-level library and does not include any codecs to compress the audio,
@@ -239,7 +246,7 @@ impl CdReader {
     /// when calling `read_track`, as it doesn't start with 0. It is important to do so,
     /// because in the future it might include 0 for the hidden track.
     pub fn read_toc(&self) -> Result<Toc, CdReaderError> {
-        platform::read_toc()
+        self.drive.read_toc()
     }
 
     /// Read raw data for the specified track number from the TOC.
@@ -285,13 +292,7 @@ impl CdReader {
         cfg: &RetryConfig,
     ) -> Result<Vec<u8>, CdReaderError> {
         read_loop::read_sectors_chunked(start_lba, sectors, mode, cfg, |lba, chunk_sectors| {
-            platform::read_cd_chunk(lba, chunk_sectors, mode)
+            self.drive.read_cd_chunk(lba, chunk_sectors, mode)
         })
-    }
-}
-
-impl Drop for CdReader {
-    fn drop(&mut self) {
-        platform::close_drive();
     }
 }
