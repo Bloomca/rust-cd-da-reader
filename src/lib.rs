@@ -214,7 +214,7 @@ impl CdReader {
     /// # Errors
     ///
     /// Returns an error if the drive cannot be opened
-    pub fn open(path: &str) -> std::io::Result<Self> {
+    pub fn open(path: &str) -> Result<Self, CdReaderError> {
         Ok(Self {
             drive: platform::Drive::open(path)?,
         })

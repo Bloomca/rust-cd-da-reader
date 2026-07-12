@@ -42,6 +42,8 @@ pub enum CdReaderError {
     Scsi(ScsiError),
     /// Parsing failure for command payloads (TOC/CD-TEXT/subchannel parsing).
     Parse(String),
+    /// Drive enumeration completed without finding a usable audio CD.
+    NoUsableDrive,
 }
 
 impl fmt::Display for CdReaderError {
@@ -54,11 +56,19 @@ impl fmt::Display for CdReaderError {
                 err.op, err.scsi_status, err.lba, err.sectors, err.sense_key, err.asc, err.ascq
             ),
             Self::Parse(msg) => write!(f, "parse error: {msg}"),
+            Self::NoUsableDrive => write!(f, "no usable audio CD drive found"),
         }
     }
 }
 
-impl std::error::Error for CdReaderError {}
+impl std::error::Error for CdReaderError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(error) => Some(error),
+            Self::Scsi(_) | Self::Parse(_) | Self::NoUsableDrive => None,
+        }
+    }
+}
 
 impl From<std::io::Error> for CdReaderError {
     fn from(value: std::io::Error) -> Self {
