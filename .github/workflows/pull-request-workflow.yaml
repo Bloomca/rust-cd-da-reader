@@ -9,7 +9,12 @@ on:
 
 jobs:
   run-tests:
-    runs-on: ubuntu-latest
+    name: Formatting, Clippy and Tests checks
+    strategy:
+      matrix:
+          os: [macos-latest, ubuntu-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
 
     steps:
