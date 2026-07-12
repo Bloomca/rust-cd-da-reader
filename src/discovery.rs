@@ -7,8 +7,6 @@ pub struct DriveInfo {
     /// Path to the drive, which can be something like 'disk6' on macOS,
     /// '\\.\E:' on Windows, and '/dev/sr0' on Linux
     pub path: String,
-    /// Just the device name, without the full path for the OS
-    pub display_name: Option<String>,
     /// Whether the current disc appears to contain at least one audio track.
     pub has_audio_cd: bool,
 }
@@ -30,11 +28,7 @@ impl CdReader {
                 Err(_) => false,
             };
 
-            drives.push(DriveInfo {
-                display_name: Some(path.clone()),
-                path,
-                has_audio_cd,
-            });
+            drives.push(DriveInfo { path, has_audio_cd });
         }
 
         Ok(drives)
@@ -65,17 +59,14 @@ mod tests {
         let drives = vec![
             DriveInfo {
                 path: "disk10".to_string(),
-                display_name: None,
                 has_audio_cd: false,
             },
             DriveInfo {
                 path: "disk11".to_string(),
-                display_name: None,
                 has_audio_cd: true,
             },
             DriveInfo {
                 path: "disk12".to_string(),
-                display_name: None,
                 has_audio_cd: true,
             },
         ];
@@ -87,7 +78,6 @@ mod tests {
     fn returns_none_when_no_audio_drive() {
         let drives = vec![DriveInfo {
             path: "/dev/sr0".to_string(),
-            display_name: None,
             has_audio_cd: false,
         }];
 
