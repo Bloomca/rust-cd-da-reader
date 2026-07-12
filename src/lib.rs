@@ -150,7 +150,7 @@ mod read_loop;
 mod retry;
 mod stream;
 mod utils;
-pub use data_reader::SectorReadMode;
+pub use data_reader::{ReadOptions, SectorReadMode};
 pub use discovery::DriveInfo;
 pub use errors::{CdReaderError, ScsiError, ScsiOp};
 pub use retry::RetryConfig;
@@ -243,24 +243,24 @@ impl CdReader {
         self.drive.read_toc()
     }
 
-    /// Read raw data for the specified track number from the TOC.
+    /// Read an audio track using the default options.
+    ///
     /// It returns raw PCM data, but if you want to save it directly and make it playable,
-    /// wrap the result with `create_wav` function, that will prepend a RIFF header and
-    /// make it a proper music file.
+    /// wrap the result with [`CdReader::create_wav`].
     pub fn read_track(&self, toc: &Toc, track_no: u8) -> Result<Vec<u8>, CdReaderError> {
-        self.read_track_with_retry(toc, track_no, &RetryConfig::default())
+        self.read_track_with_options(toc, track_no, &ReadOptions::default())
     }
 
-    /// Read raw data for the specified track number from the TOC using explicit retry config.
-    pub fn read_track_with_retry(
+    /// Read a complete track using explicit sector-format and retry options.
+    pub fn read_track_with_options(
         &self,
         toc: &Toc,
         track_no: u8,
-        cfg: &RetryConfig,
+        options: &ReadOptions,
     ) -> Result<Vec<u8>, CdReaderError> {
         let (start_lba, sectors) =
             utils::get_track_bounds(toc, track_no).map_err(CdReaderError::Io)?;
-        self.read_sector_range_with_retry(start_lba, sectors, SectorReadMode::Audio, cfg)
+        self.read_sector_range_with_retry(start_lba, sectors, options.mode, &options.retry)
     }
 
     /// Read sectors in a specific mode (audio, data cooked, or data raw).
