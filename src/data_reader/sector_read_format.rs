@@ -16,6 +16,10 @@ pub enum SectorReadFormat {
 }
 
 impl SectorReadFormat {
+    pub(crate) fn is_audio(&self) -> bool {
+        matches!(self, Self::Audio)
+    }
+
     /// Bytes returned per sector for this format.
     pub fn sector_size(&self) -> usize {
         match self {
