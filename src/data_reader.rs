@@ -1,12 +1,35 @@
 use crate::retry::RetryConfig;
 
 /// Sector format and retry options for track and sector-range reads.
+///
+/// The defaults read audio sectors using the default retry policy. Use the
+/// builder methods to override only the options you need.
 #[derive(Debug, Clone)]
 pub struct ReadOptions {
-    /// Sector format requested from the drive.
-    pub mode: SectorReadMode,
-    /// Retry policy applied to each read command.
-    pub retry: RetryConfig,
+    mode: SectorReadMode,
+    retry: RetryConfig,
+}
+
+impl ReadOptions {
+    /// Select the sector format requested from the drive.
+    pub fn with_mode(mut self, mode: SectorReadMode) -> Self {
+        self.mode = mode;
+        self
+    }
+
+    /// Set the retry policy applied to each read command.
+    pub fn with_retry(mut self, retry: RetryConfig) -> Self {
+        self.retry = retry;
+        self
+    }
+
+    pub(crate) fn mode(&self) -> SectorReadMode {
+        self.mode
+    }
+
+    pub(crate) fn retry(&self) -> &RetryConfig {
+        &self.retry
+    }
 }
 
 impl Default for ReadOptions {
@@ -104,10 +127,19 @@ mod tests {
     use super::{ReadOptions, SectorReadMode, build_read_cd_cdb};
 
     #[test]
-    fn read_options_default_to_audio() {
-        let options = ReadOptions::default();
+    fn read_options_builders_override_individual_defaults() {
+        assert_eq!(ReadOptions::default().mode(), SectorReadMode::Audio);
 
-        assert_eq!(options.mode, SectorReadMode::Audio);
+        let retry = crate::RetryConfig {
+            max_attempts: 9,
+            ..crate::RetryConfig::default()
+        };
+        let options = ReadOptions::default()
+            .with_mode(SectorReadMode::DataRaw)
+            .with_retry(retry);
+
+        assert_eq!(options.mode(), SectorReadMode::DataRaw);
+        assert_eq!(options.retry().max_attempts, 9);
     }
 
     #[test]

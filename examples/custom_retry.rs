@@ -17,16 +17,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // More attempts, longer backoff, and sector reduction down to 1
     // for maximum resilience on scratched media.
-    let options = ReadOptions {
-        retry: RetryConfig {
-            max_attempts: 8,
-            initial_backoff_ms: 50,
-            max_backoff_ms: 1000,
-            reduce_chunk_on_retry: true,
-            min_sectors_per_read: 1,
-        },
-        ..ReadOptions::default()
+    let retry = RetryConfig {
+        max_attempts: 8,
+        initial_backoff_ms: 50,
+        max_backoff_ms: 1000,
+        reduce_chunk_on_retry: true,
+        min_sectors_per_read: 1,
     };
+    let options = ReadOptions::default().with_retry(retry);
 
     println!(
         "Reading track {} with aggressive retry...",

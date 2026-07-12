@@ -68,10 +68,9 @@ impl<'a> TrackStream<'a> {
     /// depend on the [`SectorReadMode`] selected in [`TrackStreamOptions`].
     pub fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, CdReaderError> {
         self.next_chunk_with(|lba, sectors, mode, retry| {
-            let options = ReadOptions {
-                mode,
-                retry: retry.clone(),
-            };
+            let options = ReadOptions::default()
+                .with_mode(mode)
+                .with_retry(retry.clone());
             self.reader.read_sector_range(lba, sectors, &options)
         })
     }
