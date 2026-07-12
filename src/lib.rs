@@ -85,14 +85,12 @@
 //! use the streaming API instead:
 //!
 //! ```no_run
-//! use cd_da_reader::{CdReader, TrackStreamOptions};
+//! use cd_da_reader::CdReader;
 //!
 //! let reader = CdReader::open_default()?;
 //! let toc = reader.read_toc()?;
 //!
-//! let options = TrackStreamOptions::default();
-//!
-//! let mut stream = reader.open_track_stream(&toc, 1, options)?;
+//! let mut stream = reader.open_track_stream(&toc, 1)?;
 //! while let Some(chunk) = stream.next_chunk()? {
 //!     // process chunk — raw PCM, 2 352 bytes per sector
 //! }

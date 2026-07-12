@@ -161,13 +161,20 @@ impl<'a> TrackStream<'a> {
 }
 
 impl CdReader {
-    /// Open a streaming reader for a specific track in the provided TOC.
-    /// It is important to create track streams through this method so the
-    /// drive session is managed through a single CDReader instance.
+    /// Open a streaming reader for an audio track using the default options.
+    pub fn open_track_stream<'a>(
+        &'a self,
+        toc: &Toc,
+        track_no: u8,
+    ) -> Result<TrackStream<'a>, CdReaderError> {
+        self.open_track_stream_with_options(toc, track_no, TrackStreamOptions::default())
+    }
+
+    /// Open a streaming reader using explicit sector-format, retry, and chunk options.
     ///
     /// Use [`TrackStream::next_chunk`] to pull sector-aligned chunks in the
     /// format selected in [`TrackStreamOptions`].
-    pub fn open_track_stream<'a>(
+    pub fn open_track_stream_with_options<'a>(
         &'a self,
         toc: &Toc,
         track_no: u8,

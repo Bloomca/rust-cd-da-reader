@@ -1,5 +1,5 @@
 /// Reads the last audio track using the streaming API and saves it as a WAV file.
-use cd_da_reader::{CdReader, TrackStreamOptions};
+use cd_da_reader::CdReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let reader = CdReader::open_default()?;
@@ -13,8 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("no audio tracks found")?;
 
     println!("Streaming track {}...", last_audio.number);
-    let mut stream =
-        reader.open_track_stream(&toc, last_audio.number, TrackStreamOptions::default())?;
+    let mut stream = reader.open_track_stream(&toc, last_audio.number)?;
 
     let mut pcm = Vec::new();
     while let Some(chunk) = stream.next_chunk()? {
