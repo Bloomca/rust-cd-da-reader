@@ -84,10 +84,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // The same backing can be streamed instead of buffered: pull sector-aligned
-    // chunks so a player never holds a whole track in memory at once. (A gapless
-    // CHD/BIN image would open with `TrackBounds::GaplessImage`, or supply its
-    // own bounds via `open_track_stream_at`; this demo TOC has no trailing data
-    // track, so plain `open_track_stream` is equivalent.)
+    // chunks so a player never holds a whole track in memory at once. (A backing
+    // whose tracks are addressed contiguously — a gap-stripped extract — would
+    // open with `TrackBounds::Gapless`, or supply its own bounds via
+    // `open_track_stream_at`; this demo TOC has no trailing data track, so plain
+    // `open_track_stream` is equivalent.)
     let mut stream = open_track_stream(&disc, &toc, 1)?;
     let (mut chunks, mut bytes) = (0u32, 0usize);
     while let Some(chunk) = stream.next_chunk()? {

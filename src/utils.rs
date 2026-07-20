@@ -6,14 +6,14 @@ pub(crate) fn get_track_bounds(toc: &Toc, track_no: u8) -> std::io::Result<(u32,
     track_bounds(toc, track_no, true)
 }
 
-/// Track bounds for a **gapless** extracted image (CHD/BIN laid out
-/// back-to-back): the track spans from its own `start_lba` to the next track's
-/// start (or the leadout), with **no** CD-Extra inter-session gap subtracted.
+/// Track bounds for a **contiguous** layout (tracks addressed back-to-back, the
+/// CD-Extra inter-session gap stripped): the track spans from its own `start_lba`
+/// to the next track's start (or the leadout), with **no** gap subtracted.
 ///
-/// Physical-disc reads want [`get_track_bounds`]; extracted-image reads want
-/// this. Applying the physical gap rule to a gapless image would drop the
-/// inter-session gap (~2.5 min) of real audio off the last audio track before a
-/// data session.
+/// Use [`get_track_bounds`] when the addressing includes the gap (a physical disc
+/// or a geometry-preserving image); use this for a gap-stripped extract, where
+/// subtracting a gap that isn't there would drop ~2.5 min of real audio off the
+/// last audio track before a data session.
 pub(crate) fn get_gapless_track_bounds(toc: &Toc, track_no: u8) -> std::io::Result<(u32, u32)> {
     track_bounds(toc, track_no, false)
 }

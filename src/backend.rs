@@ -17,16 +17,18 @@
 //! [`read_track`], or pull it incrementally with [`open_track_stream`] (the
 //! file/image counterpart to [`TrackStream`](crate::TrackStream)).
 //!
-//! ## Physical vs. gapless track bounds
+//! ## Track bounds and the CD-Extra gap
 //!
-//! Resolving a track's sector range from a [`Toc`] differs between a physical
-//! disc and an extracted image on exactly one track: the last audio track before
-//! a trailing data session on a CD-Extra disc. A physical disc has a real
-//! inter-session gap there; an extracted CHD/BIN image is laid out gapless.
-//! [`read_track`] / [`open_track_stream`] default to
-//! [`TrackBounds::PhysicalDisc`]; image backings must pass
-//! [`TrackBounds::GaplessImage`] (or supply explicit bounds via
-//! [`open_track_stream_at`]) or that track loses ~2.5 min of audio.
+//! Resolving a track's sector range from a [`Toc`] differs on exactly one track:
+//! the last audio track before a trailing data session on a CD-Extra disc. There
+//! the crate subtracts the inter-session gap — correct whenever that gap is part
+//! of the addressing (a physical disc, or an image whose TOC preserves the real
+//! LBAs), but wrong when the tracks are addressed back-to-back with the gap
+//! stripped out (a `chdman extractcd`-style contiguous extract), where it would
+//! drop ~2.5 min of real audio. Only the backing knows its own layout, so
+//! [`read_track`] / [`open_track_stream`] default to [`TrackBounds::SessionGap`];
+//! a contiguous backing must pass [`TrackBounds::Gapless`] (or supply explicit
+//! bounds via [`open_track_stream_at`]).
 //!
 //! See `examples/file_backend.rs` for a complete, dependency-free example.
 
@@ -75,34 +77,37 @@ pub trait AudioSectorReader {
 ///
 /// The two policies differ on exactly one track: the **last audio track before a
 /// trailing data session** on a CD-Extra disc. Every other track resolves
-/// identically.
+/// identically. Which one to use depends on whether the TOC's addressing includes
+/// the inter-session gap — a property of how the source is laid out, not of
+/// physical-vs-image.
 ///
-/// - [`PhysicalDisc`](Self::PhysicalDisc) subtracts the inter-session gap
-///   (matching [`CdReader::read_track`](crate::CdReader::read_track)) — correct
-///   when reading a real disc, where that gap is present.
-/// - [`GaplessImage`](Self::GaplessImage) does not: an extracted CHD/BIN image
-///   lays tracks back-to-back, so a track spans from its `start_lba` to the next
-///   track's start (or the leadout). Subtracting the gap there would drop ~2.5
-///   min of real audio.
+/// - [`SessionGap`](Self::SessionGap) subtracts the inter-session gap (matching
+///   [`CdReader::read_track`](crate::CdReader::read_track)) — for a physical disc,
+///   or any image whose TOC preserves the disc's real LBAs.
+/// - [`Gapless`](Self::Gapless) does not: when tracks are addressed back-to-back
+///   (a gap-stripped extract), a track spans from its `start_lba` to the next
+///   track's start (or the leadout). Subtracting a gap that isn't there would drop
+///   ~2.5 min of real audio.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrackBounds {
-    /// Physical-disc geometry: apply the CD-Extra trailing-gap rule.
-    PhysicalDisc,
-    /// Gapless extracted-image geometry: no inter-session gap subtraction.
-    GaplessImage,
+    /// Addressing includes the CD-Extra inter-session gap: apply the trailing-gap
+    /// rule. Correct for a physical disc or a geometry-preserving image.
+    SessionGap,
+    /// Tracks are addressed contiguously (gap stripped): no gap subtraction.
+    Gapless,
 }
 
 impl TrackBounds {
     fn resolve(self, toc: &Toc, track_no: u8) -> std::io::Result<(u32, u32)> {
         match self {
-            TrackBounds::PhysicalDisc => utils::get_track_bounds(toc, track_no),
-            TrackBounds::GaplessImage => utils::get_gapless_track_bounds(toc, track_no),
+            TrackBounds::SessionGap => utils::get_track_bounds(toc, track_no),
+            TrackBounds::Gapless => utils::get_gapless_track_bounds(toc, track_no),
         }
     }
 }
 
-/// Read raw PCM for one track from any [`AudioSectorReader`] backing, using
-/// physical-disc track geometry ([`TrackBounds::PhysicalDisc`]).
+/// Read raw PCM for one track from any [`AudioSectorReader`] backing, assuming
+/// the TOC includes the CD-Extra inter-session gap ([`TrackBounds::SessionGap`]).
 ///
 /// This is the file/image counterpart to
 /// [`CdReader::read_track`](crate::CdReader::read_track): it resolves the track's
@@ -116,18 +121,18 @@ impl TrackBounds {
 /// [`CdReaderError::Backend`], which preserves the backing's own error as the
 /// boxed [`source`](std::error::Error::source).
 ///
-/// For a **gapless** extracted CHD/BIN image, use [`read_track_with_bounds`]
-/// with [`TrackBounds::GaplessImage`].
+/// If the backing addresses tracks contiguously (a gap-stripped extract), use
+/// [`read_track_with_bounds`] with [`TrackBounds::Gapless`].
 pub fn read_track<R>(src: &R, toc: &Toc, track_no: u8) -> Result<Vec<u8>, CdReaderError>
 where
     R: AudioSectorReader,
     R::Error: std::error::Error + Send + Sync + 'static,
 {
-    read_track_with_bounds(src, toc, track_no, TrackBounds::PhysicalDisc)
+    read_track_with_bounds(src, toc, track_no, TrackBounds::SessionGap)
 }
 
 /// Read one track like [`read_track`], but with an explicit [`TrackBounds`]
-/// geometry — pass [`TrackBounds::GaplessImage`] for extracted CHD/BIN images.
+/// geometry — pass [`TrackBounds::Gapless`] for a contiguous, gap-stripped layout.
 pub fn read_track_with_bounds<R>(
     src: &R,
     toc: &Toc,
@@ -257,18 +262,18 @@ impl<'a, R: AudioSectorReader> AudioTrackStream<'a, R> {
     }
 }
 
-/// Open a streaming reader for a track using physical-disc geometry
-/// ([`TrackBounds::PhysicalDisc`]). See [`AudioTrackStream`].
+/// Open a streaming reader for a track assuming the TOC includes the inter-session
+/// gap ([`TrackBounds::SessionGap`]). See [`AudioTrackStream`].
 pub fn open_track_stream<'a, R: AudioSectorReader>(
     src: &'a R,
     toc: &Toc,
     track_no: u8,
 ) -> Result<AudioTrackStream<'a, R>, CdReaderError> {
-    open_track_stream_with_bounds(src, toc, track_no, TrackBounds::PhysicalDisc)
+    open_track_stream_with_bounds(src, toc, track_no, TrackBounds::SessionGap)
 }
 
 /// Open a streaming reader for a track with an explicit [`TrackBounds`] geometry.
-/// Use [`TrackBounds::GaplessImage`] for extracted CHD/BIN images.
+/// Use [`TrackBounds::Gapless`] for a contiguous, gap-stripped layout.
 pub fn open_track_stream_with_bounds<'a, R: AudioSectorReader>(
     src: &'a R,
     toc: &Toc,
@@ -282,9 +287,9 @@ pub fn open_track_stream_with_bounds<'a, R: AudioSectorReader>(
 /// Open a streaming reader over an explicit absolute sector range
 /// (`start_lba .. start_lba + sectors`), bypassing TOC bounds resolution.
 ///
-/// For backings that compute their own track layout — e.g. a gapless CHD/BIN
-/// image reading `[start_lba(n) .. start_lba(n + 1))` — this is the zero-policy
-/// primitive: no TOC lookup, no CD-Extra rule, and no failure mode.
+/// For backings that compute their own track layout — e.g. reading
+/// `[start_lba(n) .. start_lba(n + 1))` from a contiguous extract — this is the
+/// zero-policy primitive: no TOC lookup, no CD-Extra rule, and no failure mode.
 pub fn open_track_stream_at<R: AudioSectorReader>(
     src: &R,
     start_lba: u32,
