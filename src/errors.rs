@@ -62,6 +62,11 @@ pub enum CdReaderError {
     },
     /// Drive enumeration completed without finding a usable audio CD.
     NoUsableDrive,
+    /// A pluggable [`AudioSectorReader`](crate::AudioSectorReader) backing failed
+    /// while reading sectors. The backing's own error is boxed and preserved as
+    /// this error's [`source`](std::error::Error::source), so it can be displayed
+    /// or downcast without being flattened into this SCSI-oriented enum.
+    Backend(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
 impl fmt::Display for CdReaderError {
@@ -97,6 +102,7 @@ impl fmt::Display for CdReaderError {
                 data_mode: None,
             } => write!(f, "could not detect sector format for track {track_number}"),
             Self::NoUsableDrive => write!(f, "no usable audio CD drive found"),
+            Self::Backend(err) => write!(f, "backend reader error: {err}"),
         }
     }
 }
@@ -105,6 +111,7 @@ impl std::error::Error for CdReaderError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io(error) => Some(error),
+            Self::Backend(error) => Some(&**error),
             Self::Scsi(_)
             | Self::Parse(_)
             | Self::TrackFormatMismatch { .. }

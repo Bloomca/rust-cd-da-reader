@@ -147,7 +147,10 @@ mod stream;
 mod utils;
 
 mod backend;
-pub use backend::{AudioSectorReader, TrackReadError, read_track};
+pub use backend::{
+    AudioSectorReader, AudioTrackStream, TrackBounds, open_track_stream, open_track_stream_at,
+    open_track_stream_with_bounds, read_track, read_track_with_bounds,
+};
 pub use data_reader::{ReadOptions, SectorReadFormat};
 pub use discovery::DriveInfo;
 pub use errors::{CdReaderError, ScsiError, ScsiOp};

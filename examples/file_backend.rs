@@ -12,7 +12,9 @@
 //! Run with: `cargo run --example file_backend`
 mod common;
 
-use cd_da_reader::{AudioSectorReader, Toc, Track, create_wav, lba_to_msf, read_track};
+use cd_da_reader::{
+    AudioSectorReader, Toc, Track, create_wav, lba_to_msf, open_track_stream, read_track,
+};
 
 /// A backing that holds whole-disc PCM in memory and slices it per sector.
 struct InMemoryDisc {
@@ -80,6 +82,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::fs::write(&output_path, wav)?;
         println!("  wrote {}", output_path.display());
     }
+
+    // The same backing can be streamed instead of buffered: pull sector-aligned
+    // chunks so a player never holds a whole track in memory at once. (A gapless
+    // CHD/BIN image would open with `TrackBounds::GaplessImage`, or supply its
+    // own bounds via `open_track_stream_at`; this demo TOC has no trailing data
+    // track, so plain `open_track_stream` is equivalent.)
+    let mut stream = open_track_stream(&disc, &toc, 1)?;
+    let (mut chunks, mut bytes) = (0u32, 0usize);
+    while let Some(chunk) = stream.next_chunk()? {
+        chunks += 1;
+        bytes += chunk.len();
+    }
+    println!(
+        "streamed track 1: {bytes} bytes in {chunks} chunks ({:.1}s of audio)",
+        stream.total_seconds()
+    );
 
     Ok(())
 }

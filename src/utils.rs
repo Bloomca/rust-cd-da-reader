@@ -3,6 +3,22 @@ use crate::Toc;
 const CD_EXTRA_TRAILING_DATA_GAP_SECTORS: u32 = 11_400;
 
 pub(crate) fn get_track_bounds(toc: &Toc, track_no: u8) -> std::io::Result<(u32, u32)> {
+    track_bounds(toc, track_no, true)
+}
+
+/// Track bounds for a **gapless** extracted image (CHD/BIN laid out
+/// back-to-back): the track spans from its own `start_lba` to the next track's
+/// start (or the leadout), with **no** CD-Extra inter-session gap subtracted.
+///
+/// Physical-disc reads want [`get_track_bounds`]; extracted-image reads want
+/// this. Applying the physical gap rule to a gapless image would drop the
+/// inter-session gap (~2.5 min) of real audio off the last audio track before a
+/// data session.
+pub(crate) fn get_gapless_track_bounds(toc: &Toc, track_no: u8) -> std::io::Result<(u32, u32)> {
+    track_bounds(toc, track_no, false)
+}
+
+fn track_bounds(toc: &Toc, track_no: u8, apply_cd_extra: bool) -> std::io::Result<(u32, u32)> {
     let idx = toc
         .tracks
         .iter()
@@ -10,15 +26,17 @@ pub(crate) fn get_track_bounds(toc: &Toc, track_no: u8) -> std::io::Result<(u32,
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "track not in TOC"))?;
 
     let start_lba = toc.tracks[idx].start_lba;
-    let end_lba = get_track_end_lba(toc, idx)?;
+    let end_lba = if apply_cd_extra {
+        get_track_end_lba(toc, idx)?
+    } else {
+        plain_track_end_lba(toc, idx)
+    };
 
     if end_lba <= start_lba {
         return Err(bad_toc_bounds());
     }
 
-    let sectors = end_lba - start_lba;
-
-    Ok((start_lba, sectors))
+    Ok((start_lba, end_lba - start_lba))
 }
 
 fn get_track_end_lba(toc: &Toc, idx: usize) -> std::io::Result<u32> {
@@ -29,10 +47,14 @@ fn get_track_end_lba(toc: &Toc, idx: usize) -> std::io::Result<u32> {
             .ok_or_else(bad_toc_bounds);
     }
 
+    Ok(plain_track_end_lba(toc, idx))
+}
+
+fn plain_track_end_lba(toc: &Toc, idx: usize) -> u32 {
     if (idx + 1) < toc.tracks.len() {
-        Ok(toc.tracks[idx + 1].start_lba)
+        toc.tracks[idx + 1].start_lba
     } else {
-        Ok(toc.leadout_lba)
+        toc.leadout_lba
     }
 }
 
@@ -229,6 +251,35 @@ mod test {
 
         assert_eq!(start_lba, 10_000);
         assert_eq!(sectors, 40_000 - 10_000);
+    }
+
+    #[test]
+    fn gapless_bounds_keep_full_last_audio_track_before_data() {
+        // Track 2 is the last audio track before a trailing data session.
+        let toc = Toc {
+            first_track: 1,
+            last_track: 4,
+            tracks: vec![
+                track(1, 0, true),
+                track(2, 10_000, true),
+                track(3, 40_000, false),
+                track(4, 80_000, false),
+            ],
+            leadout_lba: 120_000,
+        };
+
+        // Physical geometry shortens track 2 by the CD-Extra gap...
+        let (start_p, sectors_p) = get_track_bounds(&toc, 2).unwrap();
+        assert_eq!(start_p, 10_000);
+        assert_eq!(
+            sectors_p,
+            (40_000 - CD_EXTRA_TRAILING_DATA_GAP_SECTORS) - 10_000
+        );
+
+        // ...gapless geometry keeps it spanning straight to the data track.
+        let (start_g, sectors_g) = get_gapless_track_bounds(&toc, 2).unwrap();
+        assert_eq!(start_g, 10_000);
+        assert_eq!(sectors_g, 40_000 - 10_000);
     }
 
     #[test]
