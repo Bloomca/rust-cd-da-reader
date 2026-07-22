@@ -228,6 +228,32 @@ impl CdReader {
         })
     }
 
+    /// Builds a reader from an already-open handle to the drive's device node,
+    /// instead of opening the path ourselves.
+    ///
+    /// This exists for privileged access. Reading a raw optical device can
+    /// require more rights than the calling process has, and there is no way to
+    /// gain them after the fact — the descriptor has to come from somewhere
+    /// else. A caller that hits `EPERM` / `EACCES` from [`CdReader::open_path`]
+    /// can obtain one through a privilege-escalation helper (macOS
+    /// `/usr/libexec/authopen`, a setuid helper, a launchd service) and hand it
+    /// over here.
+    ///
+    /// The handle must refer to the drive's device node — `/dev/rdiskN` on
+    /// macOS, `/dev/srN` on Linux — and the reader takes ownership of it,
+    /// closing it on drop.
+    ///
+    /// On Linux the handle must have been opened `O_RDWR`: the SG_IO ioctls
+    /// this crate issues are rejected on a read-only descriptor. On macOS
+    /// `O_RDONLY` is correct and preferred, since a write-capable open of an
+    /// optical device demands exclusivity.
+    #[cfg(unix)]
+    pub fn from_file(file: std::fs::File) -> Self {
+        Self {
+            drive: platform::Drive::from_file(file),
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn test_reader() -> Self {
         Self {

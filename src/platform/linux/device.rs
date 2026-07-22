@@ -28,6 +28,18 @@ impl Drive {
         })
     }
 
+    /// Adopt an already-open handle to the drive's device node.
+    ///
+    /// Used when a direct `open` was denied and the caller obtained the
+    /// descriptor through a privileged channel instead. The `Drive` takes
+    /// ownership and closes it on drop, exactly as if it had opened the node
+    /// itself. Note that [`Drive::open`] uses `O_RDWR` because the SG_IO ioctls
+    /// this crate issues need it — a handle opened read-only will be rejected
+    /// by the kernel for those commands.
+    pub(crate) fn from_file(file: File) -> Self {
+        Self { file }
+    }
+
     pub(super) fn fd(&self) -> RawFd {
         self.file.as_raw_fd()
     }
