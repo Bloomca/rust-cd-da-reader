@@ -145,6 +145,12 @@ mod read_loop;
 mod retry;
 mod stream;
 mod utils;
+
+mod backend;
+pub use backend::{
+    AudioSectorReader, AudioTrackStream, TrackBounds, open_track_stream, open_track_stream_at,
+    open_track_stream_with_bounds, read_track, read_track_with_bounds,
+};
 pub use data_reader::{ReadOptions, SectorReadFormat};
 pub use discovery::DriveInfo;
 pub use errors::{CdReaderError, ScsiError, ScsiOp};
@@ -152,6 +158,7 @@ pub use retry::RetryConfig;
 pub use stream::{TrackStream, TrackStreamOptions};
 
 mod parse_toc;
+pub use parse_toc::lba_to_msf;
 
 /// Representation of the track from TOC, purely in terms of data location on the CD.
 #[derive(Debug)]
@@ -184,6 +191,18 @@ pub struct Toc {
     pub leadout_lba: u32,
 }
 
+/// Wrap raw CD-DA PCM in a 44-byte WAV/RIFF header (44100 Hz, 2 channels,
+/// 16-bit) so the bytes become a playable file.
+///
+/// This is the free-function form of [`CdReader::create_wav`], usable without
+/// naming the physical-drive type — for example on PCM obtained from a file or
+/// image backing via [`read_track`].
+pub fn create_wav(data: Vec<u8>) -> Vec<u8> {
+    let mut header = utils::create_wav_header(data.len() as u32);
+    header.extend_from_slice(&data);
+    header
+}
+
 /// Helper struct to interact with the audio CD. Internally it holds a platform-specific
 /// handle to the open CD drive to read from it and it is correctly closed when CDReader
 /// is dropped.
@@ -209,6 +228,32 @@ impl CdReader {
         })
     }
 
+    /// Builds a reader from an already-open handle to the drive's device node,
+    /// instead of opening the path ourselves.
+    ///
+    /// This exists for privileged access. Reading a raw optical device can
+    /// require more rights than the calling process has, and there is no way to
+    /// gain them after the fact — the descriptor has to come from somewhere
+    /// else. A caller that hits `EPERM` / `EACCES` from [`CdReader::open_path`]
+    /// can obtain one through a privilege-escalation helper (macOS
+    /// `/usr/libexec/authopen`, a setuid helper, a launchd service) and hand it
+    /// over here.
+    ///
+    /// The handle must refer to the drive's device node — `/dev/rdiskN` on
+    /// macOS, `/dev/srN` on Linux — and the reader takes ownership of it,
+    /// closing it on drop.
+    ///
+    /// On Linux the handle must have been opened `O_RDWR`: the SG_IO ioctls
+    /// this crate issues are rejected on a read-only descriptor. On macOS
+    /// `O_RDONLY` is correct and preferred, since a write-capable open of an
+    /// optical device demands exclusivity.
+    #[cfg(unix)]
+    pub fn from_file(file: std::fs::File) -> Self {
+        Self {
+            drive: platform::Drive::from_file(file),
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn test_reader() -> Self {
         Self {
@@ -224,9 +269,7 @@ impl CdReader {
     ///
     /// * `data` - vector of bytes received from `read_track` function
     pub fn create_wav(data: Vec<u8>) -> Vec<u8> {
-        let mut header = utils::create_wav_header(data.len() as u32);
-        header.extend_from_slice(&data);
-        header
+        crate::create_wav(data)
     }
 
     /// Read Table of Contents for the opened drive. You'll likely only need to access
