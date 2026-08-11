@@ -13,6 +13,7 @@ fn main() {
     println!("cargo:rerun-if-changed={NATIVE_DIR}/toc_reader.c");
     println!("cargo:rerun-if-changed={NATIVE_DIR}/track_information.c");
     println!("cargo:rerun-if-changed={NATIVE_DIR}/read_cd.c");
+    println!("cargo:rerun-if-changed={NATIVE_DIR}/request_read_speed.c");
 
     println!("cargo:rustc-link-lib=framework=IOKit");
     println!("cargo:rustc-link-lib=framework=CoreFoundation");
@@ -22,6 +23,7 @@ fn main() {
         .file(format!("{NATIVE_DIR}/toc_reader.c"))
         .file(format!("{NATIVE_DIR}/track_information.c"))
         .file(format!("{NATIVE_DIR}/read_cd.c"))
+        .file(format!("{NATIVE_DIR}/request_read_speed.c"))
         .include(NATIVE_DIR)
         // force C compilation
         .flag("-x")
