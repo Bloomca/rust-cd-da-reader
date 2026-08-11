@@ -8,8 +8,7 @@
 //!      cooked Mode 1 is exactly the ISO 9660 filesystem image, so it mounts as
 //!      is. Streaming keeps memory flat regardless of track size (a full data
 //!      track can be hundreds of MB),
-//!   4. Mode 2 is detected but not auto-cooked here (see the note it prints and
-//!      `docs/consuming-cd-da-reader.md`).
+//!   4. Mode 2 is detected but not auto-cooked here (see the note it prints).
 //!
 //! Reads and streams run over the same options and read path, so the only
 //! difference from a blocking `read_track_with_options` is that we pull chunks
@@ -58,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Mode 2 forms are a per-sector property; producing a clean cooked
             // payload requires inspecting each sector's XA subheader, which is
             // left to the consumer. We save the complete raw sectors so nothing
-            // is lost, and point at the docs.
+            // is lost.
             let bin_path = output_dir.join(format!("track{:02}.mode2.bin", data_track.number));
             let bytes = stream_track_to_file(&reader, &toc, data_track.number, format, &bin_path)?;
 
@@ -69,8 +68,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 bytes / format.sector_size() as u64
             );
             println!(
-                "Extracting a mountable filesystem from Mode 2 is consumer territory — \
-                 see docs/consuming-cd-da-reader.md (\"Mode 2\")."
+                "Extracting a mountable filesystem from Mode 2 is consumer territory: \
+                 each sector's XA subheader decides which bytes are user data."
             );
         }
         other => {

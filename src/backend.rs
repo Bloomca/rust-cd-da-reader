@@ -66,7 +66,14 @@ impl AudioSectorReader for CdReader {
 /// possible.
 pub trait AudioSectorReader {
     /// Error type produced by this backing.
-    type Error;
+    ///
+    /// Bounded here rather than at each call site so an unusable error type
+    /// (`String`, say) is rejected at the `impl` — where the fix is — instead of
+    /// compiling happily and then failing at every [`read_track`] call. The
+    /// bound is what lets a failure be reported as
+    /// [`CdReaderError::Backend`], which keeps this error as its boxed
+    /// [`source`](std::error::Error::source).
+    type Error: std::error::Error + Send + Sync + 'static;
 
     /// Read `count` sectors starting at absolute `start_lba`, returning exactly
     /// `count * 2352` bytes of little-endian PCM.
@@ -123,26 +130,22 @@ impl TrackBounds {
 ///
 /// If the backing addresses tracks contiguously (a gap-stripped extract), use
 /// [`read_track_with_bounds`] with [`TrackBounds::Gapless`].
-pub fn read_track<R>(src: &R, toc: &Toc, track_no: u8) -> Result<Vec<u8>, CdReaderError>
-where
-    R: AudioSectorReader,
-    R::Error: std::error::Error + Send + Sync + 'static,
-{
+pub fn read_track<R: AudioSectorReader>(
+    src: &R,
+    toc: &Toc,
+    track_no: u8,
+) -> Result<Vec<u8>, CdReaderError> {
     read_track_with_bounds(src, toc, track_no, TrackBounds::SessionGap)
 }
 
 /// Read one track like [`read_track`], but with an explicit [`TrackBounds`]
 /// geometry — pass [`TrackBounds::Gapless`] for a contiguous, gap-stripped layout.
-pub fn read_track_with_bounds<R>(
+pub fn read_track_with_bounds<R: AudioSectorReader>(
     src: &R,
     toc: &Toc,
     track_no: u8,
     bounds: TrackBounds,
-) -> Result<Vec<u8>, CdReaderError>
-where
-    R: AudioSectorReader,
-    R::Error: std::error::Error + Send + Sync + 'static,
-{
+) -> Result<Vec<u8>, CdReaderError> {
     let (start_lba, sectors) = bounds.resolve(toc, track_no).map_err(CdReaderError::Io)?;
     src.read_audio_sectors(start_lba, sectors)
         .map_err(|e| CdReaderError::Backend(Box::new(e)))
@@ -194,10 +197,7 @@ impl<'a, R: AudioSectorReader> AudioTrackStream<'a, R> {
     /// Each chunk is `sectors_per_chunk * 2352` bytes except possibly the last.
     /// A backing failure is [`CdReaderError::Backend`]; the position does not
     /// advance on error, so a retry re-reads the same chunk.
-    pub fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, CdReaderError>
-    where
-        R::Error: std::error::Error + Send + Sync + 'static,
-    {
+    pub fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, CdReaderError> {
         if self.remaining_sectors == 0 {
             return Ok(None);
         }

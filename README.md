@@ -162,7 +162,7 @@ let image = reader.read_track_with_options(&toc, data_track.number, &options)?;
 std::fs::write("disc.iso", &image)?;
 ```
 
-Mode 1 is fully handled (`Mode1Cooked` for the ready-to-mount user data, `Mode1Raw` for the complete 2352-byte sector). Mode 2 is *detected* (`Mode2Raw`) but its per-sector XA payload extraction is left to the consumer. The full workflow — detect, save, and platform-specific mount commands — is in `examples/save_data_track.rs`, and the detailed guide is [docs/consuming-cd-da-reader.md](docs/consuming-cd-da-reader.md).
+Mode 1 is fully handled (`Mode1Cooked` for the ready-to-mount user data, `Mode1Raw` for the complete 2352-byte sector). Mode 2 is *detected* (`Mode2Raw`) but its per-sector XA payload extraction is left to the consumer. The full workflow — detect, save, and platform-specific mount commands — is in `examples/save_data_track.rs`.
 
 ## Reading from a file image
 
@@ -183,7 +183,14 @@ let pcm = read_track(&image, &toc, 1)?;   // build `toc` from the image's metada
 let wav = create_wav(pcm);                // free fn; also CdReader::create_wav
 ```
 
-`CdReader` itself implements `AudioSectorReader`, so drive-backed and file-backed code share the generic `read_track` path. See `examples/file_backend.rs` for a complete, dependency-free example.
+`CdReader` itself implements `AudioSectorReader`, so drive-backed and file-backed code share the generic `read_track` path.
+
+Two examples cover this, both dependency-free:
+
+- `examples/file_backend.rs` — the smallest possible backing (whole-disc PCM in memory), to show the shape of the trait.
+- `examples/bin_cue_backend.rs` — a real container: it parses a `.cue` sheet into a `Toc` and serves sectors out of the `.bin` with positioned reads. Point it at an image with `cargo run --example bin_cue_backend -- /path/to/disc.cue`, or run it bare and it synthesizes a small mixed-mode image to work against.
+
+One caveat worth knowing before writing a backing: `read_track` defaults to `TrackBounds::SessionGap`, which subtracts the CD-Extra inter-session gap from the last audio track before a trailing data session. That is right for a physical disc or an image whose TOC preserves the disc's real LBAs, and wrong for an image whose tracks are addressed back-to-back with the gap stripped out (a single-`FILE` BIN/CUE, a `chdman extractcd` extract), where it would drop ~2.5 minutes of real audio. Those backings should pass `TrackBounds::Gapless` to `read_track_with_bounds` / `open_track_stream_with_bounds`.
 
 ## What about metadata?
 
