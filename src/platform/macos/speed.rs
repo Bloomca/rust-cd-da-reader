@@ -18,6 +18,12 @@ pub(super) fn request_read_speed(
         // For reference, It is 0xb066 when multiplier = 256.
         multiplier * 176400 / 1000
     };
-    unsafe { super::ffi::request_cd_read_speed(drive.fd(), target_speed_kbs as u16) };
+    let response =
+        unsafe { super::ffi::request_cd_read_speed(drive.fd(), target_speed_kbs as u16) };
+
+    if !response {
+        return Err(CdReaderError::Io(std::io::Error::last_os_error()));
+    }
+
     Ok(())
 }

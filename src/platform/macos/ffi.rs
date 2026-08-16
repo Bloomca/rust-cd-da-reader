@@ -43,7 +43,7 @@ unsafe extern "C" {
         out_len: *mut u32,
         out_err: *mut MacScsiError,
     ) -> bool;
-    pub(super) fn request_cd_read_speed(fd: libc::c_int, multiplier: libc::c_ushort);
+    pub(super) fn request_cd_read_speed(fd: libc::c_int, multiplier: libc::c_ushort) -> bool;
     pub(super) fn cd_free(pointer: *mut libc::c_void);
     pub(super) fn list_cd_drives(out_drives: *mut *mut MacDriveInfo, out_count: *mut u32) -> bool;
     pub(super) fn open_cd_raw_device(bsd_name: *const libc::c_char) -> libc::c_int;
