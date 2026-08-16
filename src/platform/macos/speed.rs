@@ -14,12 +14,10 @@ pub(super) fn request_read_speed(
     let target_speed_kbs = if multiplier == 0 {
         0xffff
     } else {
+        // `multiplier` must be less than 256, so below expression will not overflow
+        // For reference, It is 0xb066 when multiplier = 256.
         multiplier * 176400 / 1000
     };
-    if target_speed_kbs > u16::MAX.into() {
-        // TODO: Implement error handle (CdReaderError?)
-        todo!();
-    }
     unsafe { super::ffi::request_cd_read_speed(drive.fd(), target_speed_kbs as u16) };
     Ok(())
 }
