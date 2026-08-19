@@ -66,7 +66,13 @@ pub(crate) fn parse_toc(data: Vec<u8>) -> std::io::Result<Toc> {
     }
 }
 
-fn lba_to_msf(lba: u32) -> (u8, u8, u8) {
+/// Convert a Logical Block Address to its Minutes/Seconds/Frames address.
+///
+/// MSF addresses include the fixed 2-second (150-frame) lead-in offset, so
+/// `lba_to_msf(0)` is `(0, 2, 0)`. This is handy when building a [`Toc`] for a
+/// file/image backing (see [`AudioSectorReader`](crate::AudioSectorReader)),
+/// where you have sector indices but need to populate [`Track::start_msf`].
+pub fn lba_to_msf(lba: u32) -> (u8, u8, u8) {
     let total_frames = lba + 150; // MSF addresses are offset by 150
     let minutes = (total_frames / 75 / 60) as u8;
     let seconds = ((total_frames / 75) % 60) as u8;
