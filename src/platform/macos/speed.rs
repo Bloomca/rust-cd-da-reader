@@ -1,6 +1,6 @@
 use super::device::Drive;
-use crate::data_reader::ReadSpeed;
 use crate::CdReaderError;
+use crate::data_reader::ReadSpeed;
 
 pub(super) fn request_read_speed(
     drive: &Drive,
@@ -14,8 +14,6 @@ pub(super) fn request_read_speed(
     let target_speed_kbs = if multiplier == 0 {
         0xffff
     } else {
-        // `multiplier` must be less than 256, so below expression will not overflow
-        // For reference, It is 0xb066 when multiplier = 256.
         multiplier * 176400 / 1000
     };
     let response =

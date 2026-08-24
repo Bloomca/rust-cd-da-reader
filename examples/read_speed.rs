@@ -5,7 +5,7 @@ mod common;
 use cd_da_reader::{CdReader, ReadOptions, ReadSpeed, Track};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let output_dir = common::fresh_output_dir("read_first_track")?;
+    let output_dir = common::fresh_output_dir("read_speed")?;
     let reader = CdReader::open_default()?;
     let toc = reader.read_toc()?;
 
