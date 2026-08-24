@@ -34,6 +34,11 @@ impl ReadOptions {
         self
     }
 
+    /// Set the read speed to request from the drive. See [`ReadSpeed`] for
+    /// details.
+    ///
+    /// # Note
+    /// For simplicity, this crate doesn't restore the previous speed setting.
     pub fn with_read_speed(mut self, read_speed: ReadSpeed) -> Self {
         self.read_speed = read_speed;
         self
@@ -94,7 +99,7 @@ pub(crate) fn build_read_cd_cdb(lba: u32, sectors: u32, format: SectorReadFormat
 
 #[cfg(test)]
 mod tests {
-    use super::{build_read_cd_cdb, validate_track_format, ReadOptions, SectorReadFormat};
+    use super::{ReadOptions, SectorReadFormat, build_read_cd_cdb, validate_track_format};
     use crate::{CdReaderError, Track};
 
     #[test]
@@ -152,7 +157,9 @@ mod tests {
     fn builds_read_cd_cdb() {
         assert_eq!(
             build_read_cd_cdb(0x1234_5678, 0x0000_ABCD, SectorReadFormat::Mode1Raw),
-            [0xBE, 0x08, 0x12, 0x34, 0x56, 0x78, 0x00, 0xAB, 0xCD, 0xF8, 0x00, 0x00,]
+            [
+                0xBE, 0x08, 0x12, 0x34, 0x56, 0x78, 0x00, 0xAB, 0xCD, 0xF8, 0x00, 0x00,
+            ]
         );
     }
 }
