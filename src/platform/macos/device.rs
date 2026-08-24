@@ -4,7 +4,7 @@ use std::io;
 use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 use std::{ptr, slice};
 
-use super::ffi::{cd_free, list_cd_drives, open_cd_raw_device, MacDriveInfo};
+use super::ffi::{MacDriveInfo, cd_free, list_cd_drives, open_cd_raw_device};
 
 pub(crate) struct Drive {
     // file closes the file descriptor on drop automatically

@@ -5,7 +5,7 @@ mod speed;
 mod toc;
 mod track_information;
 
-pub(crate) use device::{list_drive_paths, Drive};
+pub(crate) use device::{Drive, list_drive_paths};
 
 use crate::{CdReaderError, SectorReadFormat, Toc};
 
