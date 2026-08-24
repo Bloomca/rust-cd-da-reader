@@ -1,8 +1,10 @@
 mod detect;
 mod raw_sector;
+mod read_speed;
 mod sector_read_format;
 pub(crate) mod track_information;
 
+pub use read_speed::ReadSpeed;
 pub use sector_read_format::SectorReadFormat;
 
 use crate::retry::RetryConfig;
@@ -16,6 +18,7 @@ use crate::{CdReaderError, Track};
 pub struct ReadOptions {
     format: SectorReadFormat,
     retry: RetryConfig,
+    read_speed: ReadSpeed,
 }
 
 impl ReadOptions {
@@ -31,12 +34,26 @@ impl ReadOptions {
         self
     }
 
+    /// Set the read speed to request from the drive. See [`ReadSpeed`] for
+    /// details.
+    ///
+    /// # Note
+    /// For simplicity, this crate doesn't restore the previous speed setting.
+    pub fn with_read_speed(mut self, read_speed: ReadSpeed) -> Self {
+        self.read_speed = read_speed;
+        self
+    }
+
     pub(crate) fn format(&self) -> SectorReadFormat {
         self.format
     }
 
     pub(crate) fn retry(&self) -> &RetryConfig {
         &self.retry
+    }
+
+    pub(crate) fn read_speed(&self) -> ReadSpeed {
+        self.read_speed
     }
 }
 
@@ -45,6 +62,7 @@ impl Default for ReadOptions {
         Self {
             format: SectorReadFormat::Audio,
             retry: RetryConfig::default(),
+            read_speed: ReadSpeed::Unchanged,
         }
     }
 }
