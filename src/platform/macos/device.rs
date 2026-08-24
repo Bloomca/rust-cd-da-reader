@@ -29,6 +29,16 @@ impl Drive {
         })
     }
 
+    /// Adopt an already-open handle to the drive's raw device node.
+    ///
+    /// Used when a direct `open` was denied and the caller obtained the
+    /// descriptor through a privileged channel instead (macOS `authopen`).
+    /// The `Drive` takes ownership and closes it on drop, exactly as if it had
+    /// opened the node itself.
+    pub(crate) fn from_file(file: File) -> Self {
+        Self { file }
+    }
+
     pub(super) fn fd(&self) -> RawFd {
         self.file.as_raw_fd()
     }
