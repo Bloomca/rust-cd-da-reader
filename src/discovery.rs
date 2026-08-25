@@ -1,7 +1,11 @@
 use crate::{CdReader, CdReaderError};
 
-/// Information about all found drives. This info is not tested extensively, and in
-/// general it is encouraged to provide a disk drive directly.
+/// Information about an optical drive discovered by [`CdReader::list_drives`].
+///
+/// Audio-CD detection is best-effort. If a drive cannot be opened or its TOC
+/// cannot be read, it is still returned with [`DriveInfo::has_audio_cd`] set to
+/// `false`. If you already know the platform-specific device path, you can
+/// bypass discovery with [`CdReader::open_path`].
 #[derive(Debug, Clone)]
 pub struct DriveInfo {
     /// Path to the drive, which can be something like 'disk6' on macOS,
