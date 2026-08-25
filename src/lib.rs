@@ -144,7 +144,7 @@
 //! - **Read speed:** [`ReadSpeed`] requests an optimal or custom drive speed. The default,
 //!   [`ReadSpeed::Unchanged`], leaves the current setting alone. Requested speeds are not
 //!   guaranteed, and the previous drive setting is not restored after the read. Speed settings
-//!   are drive and OS dependant.
+//!   are drive and OS dependent.
 //!
 //! ```no_run
 //! use cd_da_reader::{CdReader, ReadOptions, ReadSpeed, RetryConfig, SectorReadFormat};
