@@ -1,7 +1,7 @@
 /// Reads the last audio track using the streaming API and saves it as a WAV file.
 mod common;
 
-use cd_da_reader::CdReader;
+use cd_da_reader::{CdReader, create_wav};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output_dir = common::fresh_output_dir("stream_last_track")?;
@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         pcm.extend_from_slice(&chunk);
     }
 
-    let wav = CdReader::create_wav(pcm);
+    let wav = create_wav(pcm);
     let output_path = output_dir.join(format!("track{:02}.wav", last_audio.number));
     std::fs::write(&output_path, wav)?;
     println!("Saved {}", output_path.display());

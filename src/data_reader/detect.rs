@@ -7,6 +7,13 @@ impl CdReader {
     /// Audio tracks are identified directly from the TOC. Data tracks are
     /// queried with MMC READ TRACK INFORMATION. If its Data Mode is
     /// inconclusive, one raw sector is inspected as a fallback.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`CdReaderError::CannotDetectTrackFormat`] if neither the
+    ///   track metadata nor a raw sector identifies the data format.
+    /// - Returns [`CdReaderError::Io`], [`CdReaderError::Scsi`], or
+    ///   [`CdReaderError::Parse`] if querying the drive fails.
     pub fn detect_track_format(&self, track: &Track) -> Result<SectorReadFormat, CdReaderError> {
         if track.is_audio {
             return Ok(SectorReadFormat::Audio);

@@ -1,7 +1,11 @@
 use crate::{CdReader, CdReaderError};
 
-/// Information about all found drives. This info is not tested extensively, and in
-/// general it is encouraged to provide a disk drive directly.
+/// Information about an optical drive discovered by [`CdReader::list_drives`].
+///
+/// Audio-CD detection is best-effort. If a drive cannot be opened or its TOC
+/// cannot be read, it is still returned with [`DriveInfo::has_audio_cd`] set to
+/// `false`. If you already know the platform-specific device path, you can
+/// bypass discovery with [`CdReader::open_path`].
 #[derive(Debug, Clone)]
 pub struct DriveInfo {
     /// Path to the drive, which can be something like 'disk6' on macOS,
@@ -13,6 +17,12 @@ pub struct DriveInfo {
 
 impl CdReader {
     /// Enumerate candidate optical drives and probe whether they currently have an audio CD.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CdReaderError::Io`] if platform drive enumeration fails.
+    /// Errors while probing an individual drive are represented by
+    /// [`DriveInfo::has_audio_cd`] being `false` instead.
     pub fn list_drives() -> Result<Vec<DriveInfo>, CdReaderError> {
         let mut paths = crate::platform::list_drive_paths()?;
         paths.sort();
@@ -35,6 +45,13 @@ impl CdReader {
     }
 
     /// Open the first discovered drive that currently has an audio CD.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`CdReaderError::NoUsableDrive`] if no discovered drive has a
+    ///   readable audio CD.
+    /// - Returns [`CdReaderError::Io`] if drive enumeration or opening the
+    ///   selected drive fails.
     pub fn open_default() -> Result<Self, CdReaderError> {
         let drives = Self::list_drives()?;
         let chosen = pick_default_drive(&drives).ok_or(CdReaderError::NoUsableDrive)?;

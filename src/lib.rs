@@ -1,13 +1,15 @@
 //! # CD-DA (audio CD) reading library
 //!
-//! This library provides cross-platform audio CD reading capabilities
-//! (tested on Windows, macOS and Linux). It was written to enable CD ripping,
-//! but you can also implement a live audio CD player with its help.
-//! The library works through platform CD-drive APIs on macOS and issuing direct
-//! SCSI commands on Windows and Linux and abstracts both access to the CD drive
-//! and reading the actual data from it, so you don't deal with the hardware directly.
+//! This library provides cross-platform audio CD reading capabilities (tested
+//! on Windows, macOS and Linux). It was written to enable CD ripping, but you
+//! can also implement a live audio CD player with its help, and implement
+//! reading using your own files if you can provide ToC (table of contents) by
+//! yourself. The library works through platform CD-drive APIs on macOS and
+//! issuing direct SCSI commands on Windows and Linux and abstracts both access
+//! to the CD drive and reading the actual data from it, so you don't deal with
+//! the hardware directly. The library works in the userland.
 //!
-//! All operations happen in this order:
+//! All CD reading operations happen in this order:
 //!
 //! 1. Get a CD drive's handle
 //! 2. Read the ToC (table of contents) of the audio CD
@@ -112,23 +114,55 @@
 //! ~31 MB; a full 74-minute CD is ~650 MB.
 //!
 //! Converting raw PCM to a playable WAV file only requires prepending a 44-byte
-//! RIFF header — [`CdReader::create_wav`] does exactly that:
+//! RIFF header — [`create_wav`] does exactly that:
 //!
 //! ```no_run
-//! use cd_da_reader::CdReader;
+//! use cd_da_reader::{CdReader, create_wav};
 //!
 //! let reader = CdReader::open_default()?;
 //! let toc = reader.read_toc()?;
 //! let data = reader.read_track(&toc, 1)?;
-//! let wav = CdReader::create_wav(data);
+//! let wav = create_wav(data);
 //! std::fs::write("track01.wav", wav)?;
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+//! ## Read options
+//!
+//! [`CdReader::read_track`] uses sensible defaults for audio CDs and should be enough to get
+//! started. For more control, build [`ReadOptions`] from its defaults and pass it to
+//! [`CdReader::read_track_with_options`]. The configurable options are:
+//!
+//! - **Sector format:** [`SectorReadFormat::Audio`] returns 2,352 bytes of PCM per sector and is
+//!   the default. Data tracks can be read as the 2,048-byte [`SectorReadFormat::Mode1Cooked`]
+//!   payload or as complete 2,352-byte [`SectorReadFormat::Mode1Raw`] or
+//!   [`SectorReadFormat::Mode2Raw`] sectors. Mode 2 is available only as raw sectors; inspect
+//!   each sector's XA subheader to locate its payload. Use [`CdReader::detect_track_format`] when
+//!   the data-track format is not already known.
+//! - **Retry policy:** [`RetryConfig`] controls the number of attempts, retry delays, and adaptive
+//!   reduction of the number of sectors read at once. Its defaults are suitable for most drives.
+//! - **Read speed:** [`ReadSpeed`] requests an optimal or custom drive speed. The default,
+//!   [`ReadSpeed::Unchanged`], leaves the current setting alone. Requested speeds are not
+//!   guaranteed, and the previous drive setting is not restored after the read. Speed settings
+//!   are drive and OS dependent.
+//!
+//! ```no_run
+//! use cd_da_reader::{CdReader, ReadOptions, ReadSpeed, RetryConfig, SectorReadFormat};
+//!
+//! let reader = CdReader::open_default()?;
+//! let toc = reader.read_toc()?;
+//! let options = ReadOptions::default()
+//!     .with_format(SectorReadFormat::Audio)
+//!     .with_retry(RetryConfig::default().with_max_attempts(6))
+//!     .with_read_speed(ReadSpeed::CustomMultiplier(4));
+//! let data = reader.read_track_with_options(&toc, 1, &options)?;
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
 //! ## Metadata
 //!
 //! Audio CDs carry almost no semantic metadata. [CD-TEXT] exists but is
-//! unreliable and because of that is not provided by this lbirary. The practical approach is to
+//! unreliable and because of that is not provided by this library. The practical approach is to
 //! calculate a Disc ID from the ToC and look it up on a service such as
 //! [MusicBrainz]. The [`Toc`] struct exposes everything required for the
 //! [MusicBrainz disc ID algorithm].
@@ -168,35 +202,49 @@ pub struct Track {
     /// reading raw track data. There might be gaps, and also in the future
     /// there might be hidden track support, which will be located at number 0.
     pub number: u8,
-    /// starting offset, unnecessary to use directly
+    /// starting offset
     pub start_lba: u32,
-    /// starting offset, but in (minute, second, frame) format
+    /// Track start address in `(minutes, seconds, frames)` (MSF) form.
+    ///
+    /// MSF uses 75 frames per second and includes the standard 150-frame
+    /// lead-in offset, so LBA 0 corresponds to `(0, 2, 0)`. See [`lba_to_msf`].
     pub start_msf: (u8, u8, u8),
+    /// Whether the TOC identifies this as an audio track.
+    /// A value of `false` indicates a data track.
     pub is_audio: bool,
 }
 
 /// Table of Contents, read directly from the Audio CD. The most important part
 /// is the `tracks` vector, which allows you to read raw track data.
+///
+/// If you read from file/image directly, you need to construct it manually.
 #[derive(Debug)]
 pub struct Toc {
-    /// Helper value with the first track number
+    /// First track number reported in the TOC header.
+    ///
+    /// This is a disc track number, not a zero-based index into [`Toc::tracks`].
+    /// It does not have to start with 1 and can be up to 99.
     pub first_track: u8,
     /// Helper value with the last track number. You should not use it directly to
     /// iterate over all available tracks, as there might be gaps.
     pub last_track: u8,
     /// List of tracks with LBA and MSF offsets
     pub tracks: Vec<Track>,
-    /// Lead-out LBA reported by the drive for the disc TOC. You'll also need this
-    /// in order to calculate MusicBrainz ID.
+    /// LBA at which the lead-out area begins, as reported by the disc TOC.
+    ///
+    /// Track-bound calculations use this as the upper bound only for the last
+    /// entry in [`Toc::tracks`]. If another track follows, its start and any
+    /// applicable CD-Extra session-gap handling determine the preceding track's
+    /// bound instead. The lead-out LBA is also required to calculate a
+    /// MusicBrainz Disc ID.
     pub leadout_lba: u32,
 }
 
 /// Wrap raw CD-DA PCM in a 44-byte WAV/RIFF header (44100 Hz, 2 channels,
 /// 16-bit) so the bytes become a playable file.
 ///
-/// This is the free-function form of [`CdReader::create_wav`], usable without
-/// naming the physical-drive type — for example on PCM obtained from a file or
-/// image backing via [`read_track`].
+/// Use this with PCM returned by [`CdReader::read_track`] or obtained from a
+/// file or image backing via [`read_track`].
 pub fn create_wav(data: Vec<u8>) -> Vec<u8> {
     let mut header = utils::create_wav_header(data.len() as u32);
     header.extend_from_slice(&data);
@@ -214,6 +262,11 @@ impl CdReader {
     /// Opens a drive returned by [`CdReader::list_drives`].
     ///
     /// The reader owns the opened drive until it is dropped.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CdReaderError::Io`] if the discovered drive path cannot be
+    /// opened with the access required for raw drive commands.
     pub fn open(drive: &DriveInfo) -> Result<Self, CdReaderError> {
         Self::open_path(&drive.path)
     }
@@ -222,6 +275,11 @@ impl CdReader {
     ///
     /// Example paths are `/dev/sr0` on Linux, `disk6` on macOS, and
     /// `\\.\E:` on Windows. The reader owns the opened drive until it is dropped.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CdReaderError::Io`] if `path` is invalid or the operating
+    /// system cannot open it with the required access.
     pub fn open_path(path: &str) -> Result<Self, CdReaderError> {
         Ok(Self {
             drive: platform::Drive::open(path)?,
@@ -261,22 +319,17 @@ impl CdReader {
         }
     }
 
-    /// While this is a low-level library and does not include any codecs to compress the audio,
-    /// it includes a helper function to convert raw PCM data into a wav file, which is done by
-    /// prepending a 44 RIFF bytes header
-    ///
-    /// # Arguments
-    ///
-    /// * `data` - vector of bytes received from `read_track` function
-    pub fn create_wav(data: Vec<u8>) -> Vec<u8> {
-        crate::create_wav(data)
-    }
-
     /// Read Table of Contents for the opened drive. You'll likely only need to access
     /// `tracks` from the returned value in order to iterate and read each track's raw data.
     /// Please note that each track in the vector has `number` property, which you should use
     /// when calling `read_track`, as it doesn't start with 0. It is important to do so,
     /// because in the future it might include 0 for the hidden track.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CdReaderError::Io`] or [`CdReaderError::Scsi`] if the drive
+    /// command fails, and [`CdReaderError::Parse`] if the returned TOC is
+    /// malformed.
     pub fn read_toc(&self) -> Result<Toc, CdReaderError> {
         self.drive.read_toc()
     }
@@ -284,12 +337,24 @@ impl CdReader {
     /// Read an audio track using the default options.
     ///
     /// It returns raw PCM data, but if you want to save it directly and make it playable,
-    /// wrap the result with [`CdReader::create_wav`].
+    /// wrap the result with [`create_wav`].
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`CdReader::read_track_with_options`].
     pub fn read_track(&self, toc: &Toc, track_no: u8) -> Result<Vec<u8>, CdReaderError> {
         self.read_track_with_options(toc, track_no, &ReadOptions::default())
     }
 
-    /// Read a complete track using explicit sector-format and retry options.
+    /// Read a complete track using explicit read options.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`CdReaderError::TrackFormatMismatch`] if the selected sector
+    ///   format is incompatible with the track.
+    /// - Returns [`CdReaderError::Io`] if the track is absent, its bounds are
+    ///   invalid, or an operating-system drive operation fails.
+    /// - Returns [`CdReaderError::Scsi`] if the drive rejects a read command.
     pub fn read_track_with_options(
         &self,
         toc: &Toc,
@@ -305,13 +370,19 @@ impl CdReader {
         self.read_sector_range(start_lba, sectors, options)
     }
 
-    /// Read an arbitrary range of sectors using explicit format and retry options.
+    /// Read an arbitrary range of sectors using explicit read options.
     ///
     /// # Low-level API
     ///
     /// Callers are responsible for providing valid sector boundaries and selecting
     /// a format compatible with the sectors on the disc. Prefer [`CdReader::read_track`]
     /// or [`CdReader::read_track_with_options`] when reading a complete TOC track.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`CdReaderError::Io`] if the range is invalid, the read-speed
+    ///   request fails, or an operating-system read fails.
+    /// - Returns [`CdReaderError::Scsi`] if the drive rejects a read command.
     pub fn read_sector_range(
         &self,
         start_lba: u32,

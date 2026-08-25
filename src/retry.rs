@@ -1,12 +1,16 @@
 use std::time::Duration;
 
-/// Retry policy for read operations.
+/// Retry policy for failed drive reads.
 ///
-/// The policy is applied when we fail to read a chunk, and it will both
-/// wait a bit before attempting the next read and will decrease the number
-/// of chunks to read. The default values are aimed to be universally good
-/// and unless you have specific requirements using RetryConfig::default()
-/// is recommended.
+/// Track and sector-range reads are split into chunks, and this policy is
+/// applied independently to each chunk. If a chunk read fails, the next
+/// attempt starts at the same LBA. Retry delays use capped exponential backoff.
+/// When adaptive chunk reduction is enabled, retries request fewer sectors from
+/// that LBA, down to the configured minimum. Chunks that were already read
+/// successfully are not repeated.
+///
+/// The default values are suitable for most drives. Unless you have specific
+/// requirements, using [`RetryConfig::default`] is recommended.
 ///
 /// The default policy uses:
 ///
@@ -25,7 +29,7 @@ pub struct RetryConfig {
 }
 
 impl RetryConfig {
-    /// Set the maximum attempts per operation, including the initial attempt.
+    /// Set the maximum attempts per chunk, including the initial read.
     ///
     /// A value of zero is normalized to one attempt.
     pub fn with_max_attempts(mut self, attempts: u8) -> Self {
@@ -49,7 +53,7 @@ impl RetryConfig {
         self
     }
 
-    /// Enable or disable adaptive sector-count reduction after failed reads.
+    /// Enable or disable requesting fewer sectors after a failed chunk read.
     pub fn with_chunk_reduction(mut self, enabled: bool) -> Self {
         self.reduce_chunk_on_retry = enabled;
         self
