@@ -162,7 +162,7 @@
 //! ## Metadata
 //!
 //! Audio CDs carry almost no semantic metadata. [CD-TEXT] exists but is
-//! unreliable and because of that is not provided by this lbirary. The practical approach is to
+//! unreliable and because of that is not provided by this library. The practical approach is to
 //! calculate a Disc ID from the ToC and look it up on a service such as
 //! [MusicBrainz]. The [`Toc`] struct exposes everything required for the
 //! [MusicBrainz disc ID algorithm].
@@ -206,6 +206,8 @@ pub struct Track {
     pub start_lba: u32,
     /// starting offset, but in (minute, second, frame) format
     pub start_msf: (u8, u8, u8),
+    /// Whether the TOC identifies this as an audio track.
+    /// A value of `false` indicates a data track.
     pub is_audio: bool,
 }
 
