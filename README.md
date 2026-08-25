@@ -73,9 +73,9 @@ This will give us a struct like:
         start_msf: (0, 2, 0),
         is_audio: true,
     }, {
-        number: 1,
+        number: 2,
         start_lba: 14675,
-        start_msf: (3, 15, 50),
+        start_msf: (3, 17, 50),
         is_audio: true,
     }, ...],
     leadout_lba: 221786
@@ -162,7 +162,7 @@ let image = reader.read_track_with_options(&toc, data_track.number, &options)?;
 std::fs::write("disc.iso", &image)?;
 ```
 
-Mode 1 is fully handled (`Mode1Cooked` for the ready-to-mount user data, `Mode1Raw` for the complete 2352-byte sector). Mode 2 is *detected* (`Mode2Raw`) but its per-sector XA payload extraction is left to the consumer. The full workflow — detect, save, and platform-specific mount commands — is in `examples/save_data_track.rs`.
+While audio data is PCM, with non-audio data it is up to you to detect and parse it. It can be a mountable image or it can be something else. Mode 1 is fully handled (`Mode1Cooked` for the ready-to-mount user data, `Mode1Raw` for the complete 2352-byte sector). Mode 2 is *detected* (`Mode2Raw`), but you need to interpet the data by yourself. You can see a full workflow — detect, save, and platform-specific mount commands — in `examples/save_data_track.rs`.
 
 ## Reading from a file image
 

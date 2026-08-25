@@ -21,7 +21,7 @@ pub enum ReadSpeed {
     /// speed when the `SET CD SPEED` command is executed with the read
     /// speed (KB/s) set to 0xFFFF.
     ///
-    /// On macOS, this variant requests `SET CD SPEED` with 0xFFFF.
+    /// On macOS and Windows, this variant requests `SET CD SPEED` with 0xFFFF.
     ///
     /// On Linux, the read speed is selected by the `CDROM_SELECT_SPEED`
     /// ioctl with speed = 0. It requests automatic speed selection.
