@@ -1,51 +1,7 @@
 use std::cmp::min;
 
 use crate::data_reader::validate_track_format;
-use crate::{CdReader, CdReaderError, ReadOptions, RetryConfig, SectorReadFormat, Toc, utils};
-
-/// Options for streamed track reads.
-///
-/// The defaults read audio sectors in chunks of 27 using the default retry
-/// policy. Use the builder methods to override only the options you need.
-#[derive(Debug, Clone)]
-pub struct TrackStreamOptions {
-    sectors_per_chunk: u32,
-    format: SectorReadFormat,
-    retry: RetryConfig,
-}
-
-impl TrackStreamOptions {
-    /// Select the sector format requested from the drive.
-    pub fn with_format(mut self, format: SectorReadFormat) -> Self {
-        self.format = format;
-        self
-    }
-
-    /// Set the retry policy applied to each chunk read.
-    pub fn with_retry(mut self, retry: RetryConfig) -> Self {
-        self.retry = retry;
-        self
-    }
-
-    /// Set the target chunk size in sectors.
-    ///
-    /// The byte size of a chunk also depends on [`SectorReadFormat`]. A value of
-    /// zero is normalized to one sector.
-    pub fn with_sectors_per_chunk(mut self, sectors: u32) -> Self {
-        self.sectors_per_chunk = sectors.max(1);
-        self
-    }
-}
-
-impl Default for TrackStreamOptions {
-    fn default() -> Self {
-        Self {
-            sectors_per_chunk: 27,
-            format: SectorReadFormat::Audio,
-            retry: RetryConfig::default(),
-        }
-    }
-}
+use crate::{CdReader, CdReaderError, ReadOptions, Toc, utils};
 
 /// Track-scoped streaming reader for audio or data sectors.
 ///
@@ -57,45 +13,50 @@ pub struct TrackStream<'a> {
     next_lba: u32,
     remaining_sectors: u32,
     total_sectors: u32,
-    options: TrackStreamOptions,
+    sectors_per_chunk: u32,
+    read_options: ReadOptions,
 }
 
 impl<'a> TrackStream<'a> {
+    const DEFAULT_SECTORS_PER_CHUNK: u32 = 27;
     const SECTORS_PER_SECOND: f32 = 75.0;
+
+    /// Set the target chunk size in sectors (default 27).
+    ///
+    /// The byte size of a chunk also depends on the
+    /// [`SectorReadFormat`](crate::SectorReadFormat) selected in [`ReadOptions`].
+    /// A value of zero is normalized to one sector.
+    pub fn with_sectors_per_chunk(mut self, sectors: u32) -> Self {
+        self.sectors_per_chunk = sectors.max(1);
+        self
+    }
 
     /// Read the next chunk of sector data.
     ///
     /// Returns `Ok(None)` when end-of-track is reached. The bytes per sector
-    /// depend on the [`SectorReadFormat`] selected in [`TrackStreamOptions`].
+    /// depend on the [`SectorReadFormat`](crate::SectorReadFormat) selected in
+    /// [`ReadOptions`].
     ///
     /// # Errors
     ///
     /// Returns [`CdReaderError::Io`] or [`CdReaderError::Scsi`] if the drive
     /// read fails. The stream position does not advance on error.
     pub fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, CdReaderError> {
-        self.next_chunk_with(|lba, sectors, format, retry| {
-            let options = ReadOptions::default()
-                .with_format(format)
-                .with_retry(retry.clone());
-            self.reader.read_sector_range(lba, sectors, &options)
+        self.next_chunk_with(|lba, sectors, options| {
+            self.reader.read_sector_range(lba, sectors, options)
         })
     }
 
     fn next_chunk_with<F>(&mut self, mut read_fn: F) -> Result<Option<Vec<u8>>, CdReaderError>
     where
-        F: FnMut(u32, u32, SectorReadFormat, &RetryConfig) -> Result<Vec<u8>, CdReaderError>,
+        F: FnMut(u32, u32, &ReadOptions) -> Result<Vec<u8>, CdReaderError>,
     {
         if self.remaining_sectors == 0 {
             return Ok(None);
         }
 
-        let sectors = min(self.remaining_sectors, self.options.sectors_per_chunk);
-        let chunk = read_fn(
-            self.next_lba,
-            sectors,
-            self.options.format,
-            &self.options.retry,
-        )?;
+        let sectors = min(self.remaining_sectors, self.sectors_per_chunk);
+        let chunk = read_fn(self.next_lba, sectors, &self.read_options)?;
 
         self.next_lba += sectors;
         self.remaining_sectors -= sectors;
@@ -187,13 +148,14 @@ impl CdReader {
         toc: &Toc,
         track_no: u8,
     ) -> Result<TrackStream<'a>, CdReaderError> {
-        self.open_track_stream_with_options(toc, track_no, TrackStreamOptions::default())
+        self.open_track_stream_with_options(toc, track_no, &ReadOptions::default())
     }
 
-    /// Open a streaming reader using explicit sector-format, retry, and chunk options.
+    /// Open a streaming reader using explicit read options.
     ///
     /// Use [`TrackStream::next_chunk`] to pull sector-aligned chunks in the
-    /// format selected in [`TrackStreamOptions`].
+    /// selected format. To override the default chunk size, call
+    /// [`TrackStream::with_sectors_per_chunk`] on the returned stream.
     ///
     /// # Errors
     ///
@@ -205,10 +167,10 @@ impl CdReader {
         &'a self,
         toc: &Toc,
         track_no: u8,
-        options: TrackStreamOptions,
+        options: &ReadOptions,
     ) -> Result<TrackStream<'a>, CdReaderError> {
         if let Some(track) = toc.tracks.iter().find(|track| track.number == track_no) {
-            validate_track_format(track, options.format)?;
+            validate_track_format(track, options.format())?;
         }
 
         let (start_lba, sectors) =
@@ -220,15 +182,18 @@ impl CdReader {
             next_lba: start_lba,
             remaining_sectors: sectors,
             total_sectors: sectors,
-            options,
+            sectors_per_chunk: TrackStream::DEFAULT_SECTORS_PER_CHUNK,
+            read_options: options.clone(),
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{TrackStream, TrackStreamOptions};
-    use crate::{CdReader, CdReaderError, RetryConfig, SectorReadFormat};
+    use super::TrackStream;
+    use crate::{
+        CdReader, CdReaderError, ReadOptions, ReadSpeed, RetryConfig, SectorReadFormat, Toc, Track,
+    };
 
     fn mk_stream(
         start_lba: u32,
@@ -242,21 +207,51 @@ mod tests {
             next_lba: start_lba,
             remaining_sectors: total_sectors,
             total_sectors,
-            options: TrackStreamOptions::default().with_sectors_per_chunk(sectors_per_chunk),
+            sectors_per_chunk: TrackStream::DEFAULT_SECTORS_PER_CHUNK,
+            read_options: ReadOptions::default(),
         }
+        .with_sectors_per_chunk(sectors_per_chunk)
     }
 
     #[test]
-    fn options_builders_override_individual_defaults() {
-        let retry = RetryConfig::default().with_max_attempts(9);
-        let options = TrackStreamOptions::default()
-            .with_format(SectorReadFormat::Mode1Raw)
-            .with_retry(retry)
-            .with_sectors_per_chunk(0);
+    fn sectors_per_chunk_normalizes_zero() {
+        let stream = mk_stream(10_000, 100, 0);
+        assert_eq!(stream.sectors_per_chunk, 1);
+    }
 
-        assert_eq!(options.format, SectorReadFormat::Mode1Raw);
-        assert_eq!(options.retry.max_attempts, 9);
-        assert_eq!(options.sectors_per_chunk, 1);
+    #[test]
+    fn open_stream_preserves_all_read_options() {
+        let reader = CdReader::test_reader();
+        let toc = Toc {
+            first_track: 1,
+            last_track: 1,
+            tracks: vec![Track {
+                number: 1,
+                start_lba: 10_000,
+                start_msf: (2, 15, 25),
+                is_audio: false,
+            }],
+            leadout_lba: 10_100,
+        };
+        let options = ReadOptions::default()
+            .with_format(SectorReadFormat::Mode1Cooked)
+            .with_retry(RetryConfig::default().with_max_attempts(9))
+            .with_read_speed(ReadSpeed::CustomMultiplier(4));
+
+        let stream = reader
+            .open_track_stream_with_options(&toc, 1, &options)
+            .unwrap();
+
+        assert_eq!(stream.read_options.format(), SectorReadFormat::Mode1Cooked);
+        assert_eq!(stream.read_options.retry().max_attempts, 9);
+        assert!(matches!(
+            stream.read_options.read_speed(),
+            ReadSpeed::CustomMultiplier(4)
+        ));
+        assert_eq!(
+            stream.sectors_per_chunk,
+            TrackStream::DEFAULT_SECTORS_PER_CHUNK
+        );
     }
 
     #[test]
@@ -301,18 +296,29 @@ mod tests {
     }
 
     #[test]
-    fn next_chunk_uses_configured_format_and_advances() {
+    fn next_chunk_uses_configured_read_options_and_advances() {
         let mut stream = mk_stream(10_000, 100, 27);
-        stream.options = stream.options.with_format(SectorReadFormat::Mode1Cooked);
+        stream.read_options = ReadOptions::default()
+            .with_format(SectorReadFormat::Mode1Cooked)
+            .with_retry(RetryConfig::default().with_max_attempts(9))
+            .with_read_speed(ReadSpeed::CustomMultiplier(4));
         let mut called = false;
 
         let chunk = stream
-            .next_chunk_with(|lba, sectors, format, _| {
+            .next_chunk_with(|lba, sectors, options| {
                 called = true;
                 assert_eq!(lba, 10_000);
                 assert_eq!(sectors, 27);
-                assert_eq!(format, SectorReadFormat::Mode1Cooked);
-                Ok(vec![0u8; (sectors as usize) * format.sector_size()])
+                assert_eq!(options.format(), SectorReadFormat::Mode1Cooked);
+                assert_eq!(options.retry().max_attempts, 9);
+                assert!(matches!(
+                    options.read_speed(),
+                    ReadSpeed::CustomMultiplier(4)
+                ));
+                Ok(vec![
+                    0u8;
+                    (sectors as usize) * options.format().sector_size()
+                ])
             })
             .unwrap()
             .unwrap();
@@ -326,9 +332,7 @@ mod tests {
     #[test]
     fn next_chunk_returns_none_when_finished() {
         let mut stream = mk_stream(10_000, 0, 27);
-        let result = stream
-            .next_chunk_with(|_, _, _, _| Ok(vec![1, 2, 3]))
-            .unwrap();
+        let result = stream.next_chunk_with(|_, _, _| Ok(vec![1, 2, 3])).unwrap();
         assert!(result.is_none());
     }
 
@@ -336,7 +340,7 @@ mod tests {
     fn next_chunk_error_does_not_advance_position() {
         let mut stream = mk_stream(10_000, 100, 27);
         let err = stream
-            .next_chunk_with(|_, _, _, _| {
+            .next_chunk_with(|_, _, _| {
                 Err(CdReaderError::Io(std::io::Error::other(
                     "simulated read failure",
                 )))

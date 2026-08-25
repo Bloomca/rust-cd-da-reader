@@ -21,7 +21,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use cd_da_reader::{CdReader, SectorReadFormat, Toc, TrackStreamOptions};
+use cd_da_reader::{CdReader, ReadOptions, SectorReadFormat, Toc};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output_dir = common::fresh_output_dir("save_data_track")?;
@@ -96,8 +96,8 @@ fn stream_track_to_file(
     format: SectorReadFormat,
     path: &Path,
 ) -> Result<u64, Box<dyn std::error::Error>> {
-    let options = TrackStreamOptions::default().with_format(format);
-    let mut stream = reader.open_track_stream_with_options(toc, track_no, options)?;
+    let options = ReadOptions::default().with_format(format);
+    let mut stream = reader.open_track_stream_with_options(toc, track_no, &options)?;
 
     let total_sectors = stream.total_sectors();
     let mut writer = BufWriter::new(File::create(path)?);
