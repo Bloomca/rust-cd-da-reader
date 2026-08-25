@@ -1,13 +1,15 @@
 //! # CD-DA (audio CD) reading library
 //!
-//! This library provides cross-platform audio CD reading capabilities
-//! (tested on Windows, macOS and Linux). It was written to enable CD ripping,
-//! but you can also implement a live audio CD player with its help.
-//! The library works through platform CD-drive APIs on macOS and issuing direct
-//! SCSI commands on Windows and Linux and abstracts both access to the CD drive
-//! and reading the actual data from it, so you don't deal with the hardware directly.
+//! This library provides cross-platform audio CD reading capabilities (tested
+//! on Windows, macOS and Linux). It was written to enable CD ripping, but you
+//! can also implement a live audio CD player with its help, and implement
+//! reading using your own files if you can provide ToC (table of contents) by
+//! yourself. The library works through platform CD-drive APIs on macOS and
+//! issuing direct SCSI commands on Windows and Linux and abstracts both access
+//! to the CD drive and reading the actual data from it, so you don't deal with
+//! the hardware directly. The library works in the userland.
 //!
-//! All operations happen in this order:
+//! All CD reading operations happen in this order:
 //!
 //! 1. Get a CD drive's handle
 //! 2. Read the ToC (table of contents) of the audio CD
@@ -122,6 +124,38 @@
 //! let data = reader.read_track(&toc, 1)?;
 //! let wav = CdReader::create_wav(data);
 //! std::fs::write("track01.wav", wav)?;
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+//! ## Read options
+//!
+//! [`CdReader::read_track`] uses sensible defaults for audio CDs and should be enough to get
+//! started. For more control, build [`ReadOptions`] from its defaults and pass it to
+//! [`CdReader::read_track_with_options`]. The configurable options are:
+//!
+//! - **Sector format:** [`SectorReadFormat::Audio`] returns 2,352 bytes of PCM per sector and is
+//!   the default. Data tracks can be read as the 2,048-byte [`SectorReadFormat::Mode1Cooked`]
+//!   payload or as complete 2,352-byte [`SectorReadFormat::Mode1Raw`] or
+//!   [`SectorReadFormat::Mode2Raw`] sectors. Mode 2 is available only as raw sectors; inspect
+//!   each sector's XA subheader to locate its payload. Use [`CdReader::detect_track_format`] when
+//!   the data-track format is not already known.
+//! - **Retry policy:** [`RetryConfig`] controls the number of attempts, retry delays, and adaptive
+//!   reduction of the number of sectors read at once. Its defaults are suitable for most drives.
+//! - **Read speed:** [`ReadSpeed`] requests an optimal or custom drive speed. The default,
+//!   [`ReadSpeed::Unchanged`], leaves the current setting alone. Requested speeds are not
+//!   guaranteed, and the previous drive setting is not restored after the read. Speed settings
+//!   are drive and OS dependant.
+//!
+//! ```no_run
+//! use cd_da_reader::{CdReader, ReadOptions, ReadSpeed, RetryConfig, SectorReadFormat};
+//!
+//! let reader = CdReader::open_default()?;
+//! let toc = reader.read_toc()?;
+//! let options = ReadOptions::default()
+//!     .with_format(SectorReadFormat::Audio)
+//!     .with_retry(RetryConfig::default().with_max_attempts(6))
+//!     .with_read_speed(ReadSpeed::CustomMultiplier(4));
+//! let data = reader.read_track_with_options(&toc, 1, &options)?;
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
