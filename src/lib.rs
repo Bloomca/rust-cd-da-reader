@@ -129,9 +129,10 @@
 //!
 //! ## Read options
 //!
-//! [`CdReader::read_track`] uses sensible defaults for audio CDs and should be enough to get
-//! started. For more control, build [`ReadOptions`] from its defaults and pass it to
-//! [`CdReader::read_track_with_options`]. The configurable options are:
+//! [`CdReader::read_track`] and [`CdReader::open_track_stream`] use sensible defaults for audio
+//! CDs and should be enough to get started. For more control, build [`ReadOptions`] from its
+//! defaults and pass it to [`CdReader::read_track_with_options`] or
+//! [`CdReader::open_track_stream_with_options`]. The configurable options are:
 //!
 //! - **Sector format:** [`SectorReadFormat::Audio`] returns 2,352 bytes of PCM per sector and is
 //!   the default. Data tracks can be read as the 2,048-byte [`SectorReadFormat::Mode1Cooked`]
@@ -189,7 +190,7 @@ pub use data_reader::{ReadOptions, ReadSpeed, SectorReadFormat};
 pub use discovery::DriveInfo;
 pub use errors::{CdReaderError, ScsiError, ScsiOp};
 pub use retry::RetryConfig;
-pub use stream::{TrackStream, TrackStreamOptions};
+pub use stream::TrackStream;
 
 mod parse_toc;
 pub use parse_toc::lba_to_msf;
