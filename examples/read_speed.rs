@@ -1,49 +1,56 @@
-/// Read the first audio track at 10x speed, and read the second audio track at `Optimal`
-/// speed.
-mod common;
+/// Reads the first audio track repeatedly at different requested speeds and reports the
+/// elapsed time for each read.
+use std::time::Instant;
 
-use cd_da_reader::{CdReader, ReadOptions, ReadSpeed, Track};
+use cd_da_reader::{CdReader, ReadOptions, ReadSpeed};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let output_dir = common::fresh_output_dir("read_speed")?;
     let reader = CdReader::open_default()?;
     let toc = reader.read_toc()?;
 
-    let audio_tracks: Vec<&Track> = toc.tracks.iter().filter(|t| t.is_audio).collect();
+    let first_audio = toc
+        .tracks
+        .iter()
+        .find(|track| track.is_audio)
+        .ok_or("no audio tracks found")?;
 
-    if audio_tracks.len() < 2 {
-        panic!("This example requires at least two audio tracks");
-    }
+    // Keep "unchanged" immediately after 1x so it tests whether the previous speed
+    // request remains in effect when no new speed command is sent.
+    let speed_tests = [
+        ("1x", ReadSpeed::CustomMultiplier(1)),
+        ("unchanged (after 1x)", ReadSpeed::Unchanged),
+        ("10x", ReadSpeed::CustomMultiplier(10)),
+        ("30x", ReadSpeed::CustomMultiplier(30)),
+        ("optimal", ReadSpeed::Optimal),
+    ];
 
-    let first_track = audio_tracks[0];
-    let second_track = audio_tracks[1];
+    println!(
+        "Reading audio track {} {} times\n",
+        first_audio.number,
+        speed_tests.len()
+    );
 
-    // Read the first track with 10x speed
-    {
-        let options_10x = ReadOptions::default().with_read_speed(ReadSpeed::CustomMultiplier(10));
+    let mut timings = Vec::with_capacity(speed_tests.len());
 
-        println!("Reading track {} with 10x speed...", first_track.number);
-        let data = reader.read_track_with_options(&toc, first_track.number, &options_10x)?;
+    for (label, read_speed) in speed_tests {
+        let options = ReadOptions::default().with_read_speed(read_speed);
 
-        let wav = CdReader::create_wav(data);
-        let output_path = output_dir.join(format!("track{:02}.wav", first_track.number));
-        std::fs::write(&output_path, wav)?;
-        println!("Saved {}", output_path.display());
-    }
+        println!("Reading at {label}...");
+        let started = Instant::now();
+        let data = reader.read_track_with_options(&toc, first_audio.number, &options)?;
+        let elapsed = started.elapsed();
 
-    // Read the second track with "optimal" speed
-    {
-        let options_optimal = ReadOptions::default().with_read_speed(ReadSpeed::Optimal);
         println!(
-            "Reading track {} with optimal speed...",
-            second_track.number
+            "Read {} bytes in {:.3} seconds\n",
+            data.len(),
+            elapsed.as_secs_f64()
         );
-        let data = reader.read_track_with_options(&toc, second_track.number, &options_optimal)?;
+        timings.push((label, elapsed));
+    }
 
-        let wav = CdReader::create_wav(data);
-        let output_path = output_dir.join(format!("track{:02}.wav", second_track.number));
-        std::fs::write(&output_path, wav)?;
-        println!("Saved {}", output_path.display());
+    println!("Timing summary:");
+    for (label, elapsed) in timings {
+        println!("  {label:<22} {:>10.3} seconds", elapsed.as_secs_f64());
     }
 
     Ok(())
