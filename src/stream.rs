@@ -67,6 +67,11 @@ impl<'a> TrackStream<'a> {
     ///
     /// Returns `Ok(None)` when end-of-track is reached. The bytes per sector
     /// depend on the [`SectorReadFormat`] selected in [`TrackStreamOptions`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CdReaderError::Io`] or [`CdReaderError::Scsi`] if the drive
+    /// read fails. The stream position does not advance on error.
     pub fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, CdReaderError> {
         self.next_chunk_with(|lba, sectors, format, retry| {
             let options = ReadOptions::default()
@@ -114,7 +119,12 @@ impl<'a> TrackStream<'a> {
     /// Seek to a sector position relative to the start of the track.
     ///
     /// Valid range is `0..=total_sectors()`.
-    /// If the sector value is higher than the total, it will throw an error.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CdReaderError::Io`] containing
+    /// [`std::io::ErrorKind::InvalidInput`] if `sector` exceeds the track
+    /// length.
     pub fn seek_to_sector(&mut self, sector: u32) -> Result<(), CdReaderError> {
         if sector > self.total_sectors {
             return Err(CdReaderError::Io(std::io::Error::new(
@@ -147,6 +157,12 @@ impl<'a> TrackStream<'a> {
     /// Seek to a time position relative to the start of the track in seconds.
     ///
     /// Input is converted to sector offset and clamped to track bounds.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CdReaderError::Io`] containing
+    /// [`std::io::ErrorKind::InvalidInput`] if `seconds` is negative or not
+    /// finite.
     pub fn seek_to_seconds(&mut self, seconds: f32) -> Result<(), CdReaderError> {
         if !seconds.is_finite() || seconds < 0.0 {
             return Err(CdReaderError::Io(std::io::Error::new(
@@ -162,6 +178,10 @@ impl<'a> TrackStream<'a> {
 
 impl CdReader {
     /// Open a streaming reader for an audio track using the default options.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`CdReader::open_track_stream_with_options`].
     pub fn open_track_stream<'a>(
         &'a self,
         toc: &Toc,
@@ -174,6 +194,13 @@ impl CdReader {
     ///
     /// Use [`TrackStream::next_chunk`] to pull sector-aligned chunks in the
     /// format selected in [`TrackStreamOptions`].
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`CdReaderError::TrackFormatMismatch`] if the selected format
+    ///   is incompatible with the track.
+    /// - Returns [`CdReaderError::Io`] if the track is absent or its bounds are
+    ///   invalid.
     pub fn open_track_stream_with_options<'a>(
         &'a self,
         toc: &Toc,

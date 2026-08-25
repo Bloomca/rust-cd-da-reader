@@ -262,6 +262,11 @@ impl CdReader {
     /// Opens a drive returned by [`CdReader::list_drives`].
     ///
     /// The reader owns the opened drive until it is dropped.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CdReaderError::Io`] if the discovered drive path cannot be
+    /// opened with the access required for raw drive commands.
     pub fn open(drive: &DriveInfo) -> Result<Self, CdReaderError> {
         Self::open_path(&drive.path)
     }
@@ -270,6 +275,11 @@ impl CdReader {
     ///
     /// Example paths are `/dev/sr0` on Linux, `disk6` on macOS, and
     /// `\\.\E:` on Windows. The reader owns the opened drive until it is dropped.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CdReaderError::Io`] if `path` is invalid or the operating
+    /// system cannot open it with the required access.
     pub fn open_path(path: &str) -> Result<Self, CdReaderError> {
         Ok(Self {
             drive: platform::Drive::open(path)?,
@@ -314,6 +324,12 @@ impl CdReader {
     /// Please note that each track in the vector has `number` property, which you should use
     /// when calling `read_track`, as it doesn't start with 0. It is important to do so,
     /// because in the future it might include 0 for the hidden track.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CdReaderError::Io`] or [`CdReaderError::Scsi`] if the drive
+    /// command fails, and [`CdReaderError::Parse`] if the returned TOC is
+    /// malformed.
     pub fn read_toc(&self) -> Result<Toc, CdReaderError> {
         self.drive.read_toc()
     }
@@ -322,11 +338,23 @@ impl CdReader {
     ///
     /// It returns raw PCM data, but if you want to save it directly and make it playable,
     /// wrap the result with [`create_wav`].
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`CdReader::read_track_with_options`].
     pub fn read_track(&self, toc: &Toc, track_no: u8) -> Result<Vec<u8>, CdReaderError> {
         self.read_track_with_options(toc, track_no, &ReadOptions::default())
     }
 
-    /// Read a complete track using explicit read options
+    /// Read a complete track using explicit read options.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`CdReaderError::TrackFormatMismatch`] if the selected sector
+    ///   format is incompatible with the track.
+    /// - Returns [`CdReaderError::Io`] if the track is absent, its bounds are
+    ///   invalid, or an operating-system drive operation fails.
+    /// - Returns [`CdReaderError::Scsi`] if the drive rejects a read command.
     pub fn read_track_with_options(
         &self,
         toc: &Toc,
@@ -349,6 +377,12 @@ impl CdReader {
     /// Callers are responsible for providing valid sector boundaries and selecting
     /// a format compatible with the sectors on the disc. Prefer [`CdReader::read_track`]
     /// or [`CdReader::read_track_with_options`] when reading a complete TOC track.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`CdReaderError::Io`] if the range is invalid, the read-speed
+    ///   request fails, or an operating-system read fails.
+    /// - Returns [`CdReaderError::Scsi`] if the drive rejects a read command.
     pub fn read_sector_range(
         &self,
         start_lba: u32,

@@ -77,6 +77,11 @@ pub trait AudioSectorReader {
 
     /// Read `count` sectors starting at absolute `start_lba`, returning exactly
     /// `count * 2352` bytes of little-endian PCM.
+    ///
+    /// # Errors
+    ///
+    /// Implementations must return an error if they cannot provide the complete
+    /// requested sector range in the required format.
     fn read_audio_sectors(&self, start_lba: u32, count: u32) -> Result<Vec<u8>, Self::Error>;
 }
 
@@ -123,13 +128,15 @@ impl TrackBounds {
 /// 2352-B/sector PCM, so [`create_wav`](crate::create_wav) wraps them into a
 /// playable file unchanged.
 ///
+/// If the backing addresses tracks contiguously without gaps, use
+/// [`read_track_with_bounds`] with [`TrackBounds::Gapless`].
+///
+/// # Errors
+///
 /// A bad track request (not in the TOC, or invalid bounds) is
 /// [`CdReaderError::Io`]; a failure inside the backing is
 /// [`CdReaderError::Backend`], which preserves the backing's own error as the
 /// boxed [`source`](std::error::Error::source).
-///
-/// If the backing addresses tracks contiguously (a gap-stripped extract), use
-/// [`read_track_with_bounds`] with [`TrackBounds::Gapless`].
 pub fn read_track<R: AudioSectorReader>(
     src: &R,
     toc: &Toc,
@@ -140,6 +147,11 @@ pub fn read_track<R: AudioSectorReader>(
 
 /// Read one track like [`read_track`], but with an explicit [`TrackBounds`]
 /// geometry — pass [`TrackBounds::Gapless`] for a contiguous, gap-stripped layout.
+///
+/// # Errors
+///
+/// Returns [`CdReaderError::Io`] if the track is absent or its bounds are
+/// invalid, and [`CdReaderError::Backend`] if the backing read fails.
 pub fn read_track_with_bounds<R: AudioSectorReader>(
     src: &R,
     toc: &Toc,
@@ -195,8 +207,11 @@ impl<'a, R: AudioSectorReader> AudioTrackStream<'a, R> {
     /// Read the next chunk of PCM, or `Ok(None)` at end-of-track.
     ///
     /// Each chunk is `sectors_per_chunk * 2352` bytes except possibly the last.
-    /// A backing failure is [`CdReaderError::Backend`]; the position does not
-    /// advance on error, so a retry re-reads the same chunk.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CdReaderError::Backend`] if the backing read fails. The stream
+    /// position does not advance on error, so a retry re-reads the same chunk.
     pub fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, CdReaderError> {
         if self.remaining_sectors == 0 {
             return Ok(None);
@@ -225,6 +240,12 @@ impl<'a, R: AudioSectorReader> AudioTrackStream<'a, R> {
     }
 
     /// Seek to a track-relative sector position (valid range `0..=total_sectors()`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CdReaderError::Io`] containing
+    /// [`std::io::ErrorKind::InvalidInput`] if `sector` exceeds the track
+    /// length.
     pub fn seek_to_sector(&mut self, sector: u32) -> Result<(), CdReaderError> {
         if sector > self.total_sectors {
             return Err(CdReaderError::Io(std::io::Error::new(
@@ -249,6 +270,12 @@ impl<'a, R: AudioSectorReader> AudioTrackStream<'a, R> {
     }
 
     /// Seek to a track-relative time in seconds, clamped to the track length.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CdReaderError::Io`] containing
+    /// [`std::io::ErrorKind::InvalidInput`] if `seconds` is negative or not
+    /// finite.
     pub fn seek_to_seconds(&mut self, seconds: f32) -> Result<(), CdReaderError> {
         if !seconds.is_finite() || seconds < 0.0 {
             return Err(CdReaderError::Io(std::io::Error::new(
@@ -264,6 +291,11 @@ impl<'a, R: AudioSectorReader> AudioTrackStream<'a, R> {
 
 /// Open a streaming reader for a track assuming the TOC includes the inter-session
 /// gap ([`TrackBounds::SessionGap`]). See [`AudioTrackStream`].
+///
+/// # Errors
+///
+/// Returns [`CdReaderError::Io`] if the track is absent or its bounds are
+/// invalid.
 pub fn open_track_stream<'a, R: AudioSectorReader>(
     src: &'a R,
     toc: &Toc,
@@ -274,6 +306,11 @@ pub fn open_track_stream<'a, R: AudioSectorReader>(
 
 /// Open a streaming reader for a track with an explicit [`TrackBounds`] geometry.
 /// Use [`TrackBounds::Gapless`] for a contiguous, gap-stripped layout.
+///
+/// # Errors
+///
+/// Returns [`CdReaderError::Io`] if the track is absent or its bounds are
+/// invalid.
 pub fn open_track_stream_with_bounds<'a, R: AudioSectorReader>(
     src: &'a R,
     toc: &Toc,
