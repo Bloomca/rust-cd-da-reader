@@ -37,7 +37,7 @@ impl ReadOptions {
     }
 
     /// Set the read speed to request from the drive. See [`ReadSpeed`] for
-    /// details.
+    /// details. Streaming reads apply this request once when the stream is opened.
     ///
     /// # Note
     /// For simplicity, this crate doesn't restore the previous speed setting.

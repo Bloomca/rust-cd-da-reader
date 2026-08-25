@@ -1,7 +1,19 @@
 use std::cmp::min;
 
 use crate::data_reader::validate_track_format;
-use crate::{CdReader, CdReaderError, ReadOptions, Toc, utils};
+use crate::{CdReader, CdReaderError, ReadOptions, ReadSpeed, Toc, utils};
+
+fn apply_stream_read_speed_once(
+    options: &ReadOptions,
+    request_read_speed: impl FnOnce(ReadSpeed) -> Result<(), CdReaderError>,
+) -> Result<ReadOptions, CdReaderError> {
+    request_read_speed(options.read_speed())?;
+
+    // The speed request applies to the stream as a whole. Chunk reads go
+    // through read_sector_range, so to avoid constant speed setting, we
+    // apply it once and clone ReadOptions with unchanged speed
+    Ok(options.clone().with_read_speed(ReadSpeed::Unchanged))
+}
 
 /// Track-scoped streaming reader for audio or data sectors.
 ///
@@ -154,15 +166,17 @@ impl CdReader {
     /// Open a streaming reader using explicit read options.
     ///
     /// Use [`TrackStream::next_chunk`] to pull sector-aligned chunks in the
-    /// selected format. To override the default chunk size, call
-    /// [`TrackStream::with_sectors_per_chunk`] on the returned stream.
+    /// selected format. The requested read speed is applied once before the
+    /// stream is returned. To override the default
+    /// chunk size, call [`TrackStream::with_sectors_per_chunk`] on the returned
+    /// stream.
     ///
     /// # Errors
     ///
     /// - Returns [`CdReaderError::TrackFormatMismatch`] if the selected format
     ///   is incompatible with the track.
-    /// - Returns [`CdReaderError::Io`] if the track is absent or its bounds are
-    ///   invalid.
+    /// - Returns [`CdReaderError::Io`] if the track is absent, its bounds are
+    ///   invalid, or the read-speed request fails.
     pub fn open_track_stream_with_options<'a>(
         &'a self,
         toc: &Toc,
@@ -175,6 +189,9 @@ impl CdReader {
 
         let (start_lba, sectors) =
             utils::get_track_bounds(toc, track_no).map_err(CdReaderError::Io)?;
+        let read_options = apply_stream_read_speed_once(options, |read_speed| {
+            self.drive.request_read_speed(read_speed)
+        })?;
 
         Ok(TrackStream {
             reader: self,
@@ -183,14 +200,14 @@ impl CdReader {
             remaining_sectors: sectors,
             total_sectors: sectors,
             sectors_per_chunk: TrackStream::DEFAULT_SECTORS_PER_CHUNK,
-            read_options: options.clone(),
+            read_options,
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::TrackStream;
+    use super::{TrackStream, apply_stream_read_speed_once};
     use crate::{
         CdReader, CdReaderError, ReadOptions, ReadSpeed, RetryConfig, SectorReadFormat, Toc, Track,
     };
@@ -220,7 +237,35 @@ mod tests {
     }
 
     #[test]
-    fn open_stream_preserves_all_read_options() {
+    fn stream_speed_is_requested_once_before_chunk_reads() {
+        let options = ReadOptions::default().with_read_speed(ReadSpeed::CustomMultiplier(4));
+        let mut speed_requests = 0;
+        let chunk_options = apply_stream_read_speed_once(&options, |read_speed| {
+            speed_requests += 1;
+            assert!(matches!(read_speed, ReadSpeed::CustomMultiplier(4)));
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(speed_requests, 1);
+        assert!(matches!(chunk_options.read_speed(), ReadSpeed::Unchanged));
+
+        let mut stream = mk_stream(10_000, 100, 27);
+        stream.read_options = chunk_options;
+        for _ in 0..2 {
+            stream
+                .next_chunk_with(|_, _, options| {
+                    assert!(matches!(options.read_speed(), ReadSpeed::Unchanged));
+                    Ok(Vec::new())
+                })
+                .unwrap();
+        }
+
+        assert_eq!(speed_requests, 1);
+    }
+
+    #[test]
+    fn open_stream_preserves_chunk_read_options() {
         let reader = CdReader::test_reader();
         let toc = Toc {
             first_track: 1,
@@ -235,8 +280,7 @@ mod tests {
         };
         let options = ReadOptions::default()
             .with_format(SectorReadFormat::Mode1Cooked)
-            .with_retry(RetryConfig::default().with_max_attempts(9))
-            .with_read_speed(ReadSpeed::CustomMultiplier(4));
+            .with_retry(RetryConfig::default().with_max_attempts(9));
 
         let stream = reader
             .open_track_stream_with_options(&toc, 1, &options)
@@ -246,7 +290,7 @@ mod tests {
         assert_eq!(stream.read_options.retry().max_attempts, 9);
         assert!(matches!(
             stream.read_options.read_speed(),
-            ReadSpeed::CustomMultiplier(4)
+            ReadSpeed::Unchanged
         ));
         assert_eq!(
             stream.sectors_per_chunk,
@@ -300,8 +344,7 @@ mod tests {
         let mut stream = mk_stream(10_000, 100, 27);
         stream.read_options = ReadOptions::default()
             .with_format(SectorReadFormat::Mode1Cooked)
-            .with_retry(RetryConfig::default().with_max_attempts(9))
-            .with_read_speed(ReadSpeed::CustomMultiplier(4));
+            .with_retry(RetryConfig::default().with_max_attempts(9));
         let mut called = false;
 
         let chunk = stream
@@ -311,10 +354,7 @@ mod tests {
                 assert_eq!(sectors, 27);
                 assert_eq!(options.format(), SectorReadFormat::Mode1Cooked);
                 assert_eq!(options.retry().max_attempts, 9);
-                assert!(matches!(
-                    options.read_speed(),
-                    ReadSpeed::CustomMultiplier(4)
-                ));
+                assert!(matches!(options.read_speed(), ReadSpeed::Unchanged));
                 Ok(vec![
                     0u8;
                     (sectors as usize) * options.format().sector_size()
