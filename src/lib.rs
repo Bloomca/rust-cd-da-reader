@@ -325,7 +325,7 @@ impl CdReader {
         self.read_track_with_options(toc, track_no, &ReadOptions::default())
     }
 
-    /// Read a complete track using explicit sector-format and retry options.
+    /// Read a complete track using explicit read options
     pub fn read_track_with_options(
         &self,
         toc: &Toc,
@@ -341,7 +341,7 @@ impl CdReader {
         self.read_sector_range(start_lba, sectors, options)
     }
 
-    /// Read an arbitrary range of sectors using explicit format and retry options.
+    /// Read an arbitrary range of sectors using explicit read options.
     ///
     /// # Low-level API
     ///

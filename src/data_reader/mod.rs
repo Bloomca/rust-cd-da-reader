@@ -10,10 +10,12 @@ pub use sector_read_format::SectorReadFormat;
 use crate::retry::RetryConfig;
 use crate::{CdReaderError, Track};
 
-/// Sector format and retry options for track and sector-range reads.
+/// Sector format, retry policy, and read speed options for track and
+/// sector-range reads.
 ///
-/// The defaults read audio sectors using the default retry policy. Use the
-/// builder methods to override only the options you need.
+/// The defaults read audio sectors using the default retry policy and leave the
+/// drive's current read speed unchanged. Use the builder methods to override
+/// only the options you need.
 #[derive(Debug, Clone)]
 pub struct ReadOptions {
     format: SectorReadFormat,
