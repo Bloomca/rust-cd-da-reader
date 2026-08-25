@@ -114,15 +114,15 @@
 //! ~31 MB; a full 74-minute CD is ~650 MB.
 //!
 //! Converting raw PCM to a playable WAV file only requires prepending a 44-byte
-//! RIFF header — [`CdReader::create_wav`] does exactly that:
+//! RIFF header — [`create_wav`] does exactly that:
 //!
 //! ```no_run
-//! use cd_da_reader::CdReader;
+//! use cd_da_reader::{CdReader, create_wav};
 //!
 //! let reader = CdReader::open_default()?;
 //! let toc = reader.read_toc()?;
 //! let data = reader.read_track(&toc, 1)?;
-//! let wav = CdReader::create_wav(data);
+//! let wav = create_wav(data);
 //! std::fs::write("track01.wav", wav)?;
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
@@ -216,6 +216,8 @@ pub struct Track {
 
 /// Table of Contents, read directly from the Audio CD. The most important part
 /// is the `tracks` vector, which allows you to read raw track data.
+///
+/// If you read from file/image directly, you need to construct it manually.
 #[derive(Debug)]
 pub struct Toc {
     /// First track number reported in the TOC header.
@@ -241,9 +243,8 @@ pub struct Toc {
 /// Wrap raw CD-DA PCM in a 44-byte WAV/RIFF header (44100 Hz, 2 channels,
 /// 16-bit) so the bytes become a playable file.
 ///
-/// This is the free-function form of [`CdReader::create_wav`], usable without
-/// naming the physical-drive type — for example on PCM obtained from a file or
-/// image backing via [`read_track`].
+/// Use this with PCM returned by [`CdReader::read_track`] or obtained from a
+/// file or image backing via [`read_track`].
 pub fn create_wav(data: Vec<u8>) -> Vec<u8> {
     let mut header = utils::create_wav_header(data.len() as u32);
     header.extend_from_slice(&data);
@@ -308,17 +309,6 @@ impl CdReader {
         }
     }
 
-    /// While this is a low-level library and does not include any codecs to compress the audio,
-    /// it includes a helper function to convert raw PCM data into a wav file, which is done by
-    /// prepending a 44 RIFF bytes header
-    ///
-    /// # Arguments
-    ///
-    /// * `data` - vector of bytes received from `read_track` function
-    pub fn create_wav(data: Vec<u8>) -> Vec<u8> {
-        crate::create_wav(data)
-    }
-
     /// Read Table of Contents for the opened drive. You'll likely only need to access
     /// `tracks` from the returned value in order to iterate and read each track's raw data.
     /// Please note that each track in the vector has `number` property, which you should use
@@ -331,7 +321,7 @@ impl CdReader {
     /// Read an audio track using the default options.
     ///
     /// It returns raw PCM data, but if you want to save it directly and make it playable,
-    /// wrap the result with [`CdReader::create_wav`].
+    /// wrap the result with [`create_wav`].
     pub fn read_track(&self, toc: &Toc, track_no: u8) -> Result<Vec<u8>, CdReaderError> {
         self.read_track_with_options(toc, track_no, &ReadOptions::default())
     }

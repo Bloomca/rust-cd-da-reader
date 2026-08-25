@@ -20,7 +20,7 @@ mod common;
 
 use std::path::Path;
 
-use cd_da_reader::{CdReader, ReadOptions};
+use cd_da_reader::{CdReader, ReadOptions, create_wav};
 
 /// CD-DA plays 75 sectors (each 2352 bytes) per second.
 const SECTORS_PER_SECOND: u32 = 75;
@@ -66,7 +66,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let output_path = output_dir.join(format!("track{:02}_preview.wav", track.number));
-    std::fs::write(&output_path, CdReader::create_wav(pcm))?;
+    std::fs::write(&output_path, create_wav(pcm))?;
     println!("Saved {}", output_path.display());
 
     play(&output_path)

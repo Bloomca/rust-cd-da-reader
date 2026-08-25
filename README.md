@@ -128,13 +128,13 @@ Each CD sector holds exactly 2,352 bytes of audio payload (176,400 / 75 = 2,352)
 Converting PCM data to a playable WAV file only requires prepending a 44-byte RIFF header. In fact, there is a helper for that in this library:
 
 ```rust
-use cd_da_reader::{CdReader};
+use cd_da_reader::{CdReader, create_wav};
 
 let reader = CdReader::open_default()?;
 let toc = reader.read_toc()?;
 // we assume that track #1 exists for simplicity
 let data = reader.read_track(&toc, 1)?;
-let wav = CdReader::create_wav(data);
+let wav = create_wav(data);
 std::fs::write("myfile.wav", wav)?;
 ```
 
@@ -180,7 +180,7 @@ impl AudioSectorReader for MyImage {
 }
 
 let pcm = read_track(&image, &toc, 1)?;   // build `toc` from the image's metadata
-let wav = create_wav(pcm);                // free fn; also CdReader::create_wav
+let wav = create_wav(pcm);
 ```
 
 `CdReader` itself implements `AudioSectorReader`, so drive-backed and file-backed code share the generic `read_track` path.

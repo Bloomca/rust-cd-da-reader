@@ -1,7 +1,7 @@
 /// Streams the first audio track while printing a live progress line.
 mod common;
 
-use cd_da_reader::CdReader;
+use cd_da_reader::{CdReader, create_wav};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output_dir = common::fresh_output_dir("stream_with_progress")?;
@@ -34,7 +34,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     eprintln!("\r  [{:.1}s / {:.1}s] 100.0%", total_secs, total_secs);
 
-    let wav = CdReader::create_wav(pcm);
+    let wav = create_wav(pcm);
     let output_path = output_dir.join(format!("track{:02}.wav", first_audio.number));
     std::fs::write(&output_path, wav)?;
     println!("\nSaved {}", output_path.display());

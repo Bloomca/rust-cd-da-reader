@@ -1,7 +1,7 @@
 /// Reads every audio track from the default CD drive and saves each as a WAV file.
 mod common;
 
-use cd_da_reader::CdReader;
+use cd_da_reader::{CdReader, create_wav};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output_dir = common::fresh_output_dir("read_all_tracks")?;
@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         print!("Reading track {:>2}... ", track.number);
         match reader.read_track(&toc, track.number) {
             Ok(data) => {
-                let wav = CdReader::create_wav(data);
+                let wav = create_wav(data);
                 let output_path = output_dir.join(format!("track{:02}.wav", track.number));
                 std::fs::write(&output_path, wav)?;
                 println!("saved {}", output_path.display());
