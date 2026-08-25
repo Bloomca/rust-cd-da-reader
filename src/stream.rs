@@ -111,7 +111,7 @@ impl<'a> TrackStream<'a> {
         self.total_sectors - self.remaining_sectors
     }
 
-    /// Seek to an absolute track-relative sector position.
+    /// Seek to a sector position relative to the start of the track.
     ///
     /// Valid range is `0..=total_sectors()`.
     /// If the sector value is higher than the total, it will throw an error.
@@ -144,7 +144,7 @@ impl<'a> TrackStream<'a> {
         self.total_sectors as f32 / Self::SECTORS_PER_SECOND
     }
 
-    /// Seek to an absolute track-relative time position in seconds.
+    /// Seek to a time position relative to the start of the track in seconds.
     ///
     /// Input is converted to sector offset and clamped to track bounds.
     pub fn seek_to_seconds(&mut self, seconds: f32) -> Result<(), CdReaderError> {
