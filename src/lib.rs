@@ -202,9 +202,12 @@ pub struct Track {
     /// reading raw track data. There might be gaps, and also in the future
     /// there might be hidden track support, which will be located at number 0.
     pub number: u8,
-    /// starting offset, unnecessary to use directly
+    /// starting offset
     pub start_lba: u32,
-    /// starting offset, but in (minute, second, frame) format
+    /// Track start address in `(minutes, seconds, frames)` (MSF) form.
+    ///
+    /// MSF uses 75 frames per second and includes the standard 150-frame
+    /// lead-in offset, so LBA 0 corresponds to `(0, 2, 0)`. See [`lba_to_msf`].
     pub start_msf: (u8, u8, u8),
     /// Whether the TOC identifies this as an audio track.
     /// A value of `false` indicates a data track.
@@ -215,15 +218,23 @@ pub struct Track {
 /// is the `tracks` vector, which allows you to read raw track data.
 #[derive(Debug)]
 pub struct Toc {
-    /// Helper value with the first track number
+    /// First track number reported in the TOC header.
+    ///
+    /// This is a disc track number, not a zero-based index into [`Toc::tracks`].
+    /// It does not have to start with 1 and can be up to 99.
     pub first_track: u8,
     /// Helper value with the last track number. You should not use it directly to
     /// iterate over all available tracks, as there might be gaps.
     pub last_track: u8,
     /// List of tracks with LBA and MSF offsets
     pub tracks: Vec<Track>,
-    /// Lead-out LBA reported by the drive for the disc TOC. You'll also need this
-    /// in order to calculate MusicBrainz ID.
+    /// LBA at which the lead-out area begins, as reported by the disc TOC.
+    ///
+    /// Track-bound calculations use this as the upper bound only for the last
+    /// entry in [`Toc::tracks`]. If another track follows, its start and any
+    /// applicable CD-Extra session-gap handling determine the preceding track's
+    /// bound instead. The lead-out LBA is also required to calculate a
+    /// MusicBrainz Disc ID.
     pub leadout_lba: u32,
 }
 
