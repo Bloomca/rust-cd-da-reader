@@ -202,7 +202,7 @@ pub use stream::TrackStream;
 mod parse_toc;
 pub use parse_toc::lba_to_msf;
 
-/// Representation of the track from TOC, purely in terms of data location on the CD.
+/// Representation of the track from ToC, purely in terms of data location on the CD.
 #[derive(Debug)]
 pub struct Track {
     /// Track number from the Table of Contents (read from the CD itself).
