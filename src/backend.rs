@@ -49,13 +49,13 @@ impl AudioSectorReader for CdReader {
 }
 
 /// A source of raw CD-DA audio sectors.
-/// 
+///
 /// This trait separates source-specific I/O from the crate's track-level logic.
 /// Meaning that you can provide your implementation for any source which can provide
 /// audio CD sectors, like a disc image, decoded container, in-memory disc, or a remote
 /// source. [`read_track`] and [`open_track_stream`] use a caller-provided [`Toc`] to calculate
 /// sector ranges, then retrieve those sectors through [`read_audio_sectors`](Self::read_audio_sectors).
-/// 
+///
 /// Implementations are responsible only for reading sectors. They do not build
 /// the [`Toc`], select tracks, calculate track boundaries, or account for
 /// CD-Extra session gaps. The backing's sector address space must agree with the
@@ -74,7 +74,7 @@ impl AudioSectorReader for CdReader {
 /// One sector therefore represents 1/75 second of audio. Returned data must not
 /// include a WAV header, CD sector headers, subchannel data, or padding. It is
 /// byte-for-byte compatible with [`CdReader::read_track`] and can be passed
-/// directly to [`create_wav`].
+/// directly to [`create_wav`](crate::create_wav).
 ///
 /// # Addressing and read semantics
 ///

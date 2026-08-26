@@ -38,7 +38,7 @@
 //!     .iter()
 //!     .find(|drive| drive.has_audio_cd) // we check for audio by checking ToC
 //!     .ok_or("no optical drives found")?;
-//! 
+//!
 //! let reader = CdReader::open(selected)?;
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
@@ -141,7 +141,7 @@
 //! [`CdReader::read_track`] and [`CdReader::open_track_stream`] use the
 //! [`ReadOptions`] defaults: CD-DA audio sectors, the default retry policy, and
 //! no read-speed change. These settings are sufficient for most audio reads.
-//! 
+//!
 //! For more control, start with `ReadOptions::default()` and pass the configured
 //! options to [`CdReader::read_track_with_options`] or [`CdReader::open_track_stream_with_options`].
 //! The configurable options are:

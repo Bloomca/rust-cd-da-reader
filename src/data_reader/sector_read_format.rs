@@ -6,8 +6,9 @@
 ///
 /// [`ReadOptions`](crate::ReadOptions) defaults to [`Audio`](Self::Audio), so
 /// callers reading audio tracks normally do not need to select a format. For a
-/// data track, call [`CdReader::detect_track_format`] and pass the result to
-/// [`ReadOptions::with_format`](crate::ReadOptions::with_format). Detection
+/// data track, call
+/// [`CdReader::detect_track_format`](crate::CdReader::detect_track_format) and
+/// pass the result to [`ReadOptions::with_format`](crate::ReadOptions::with_format). Detection
 /// chooses [`Mode1Cooked`](Self::Mode1Cooked) for Mode 1 tracks and
 /// [`Mode2Raw`](Self::Mode2Raw) for Mode 2 tracks.
 ///
