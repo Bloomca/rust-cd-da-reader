@@ -1,15 +1,17 @@
 //! # CD-DA (audio CD) reading library
 //!
 //! This library provides cross-platform audio CD reading capabilities (tested
-//! on Windows, macOS and Linux). It was written to enable CD ripping, but you
-//! can also implement a live audio CD player with its help, and implement
-//! reading using your own files if you can provide ToC (table of contents) by
-//! yourself. The library works through platform CD-drive APIs on macOS and
-//! issuing direct SCSI commands on Windows and Linux and abstracts both access
-//! to the CD drive and reading the actual data from it, so you don't deal with
-//! the hardware directly. The library works in the userland.
+//! on Windows, macOS and Linux). It was written to enable CD ripping, but it can
+//! also be used to build a live audio CD player. The primary API reads physical
+//! discs; to read from a file, image, or another custom source, implement
+//! [`AudioSectorReader`] and provide a [`Toc`].
 //!
-//! All CD reading operations happen in this order:
+//! Physical-disc access uses platform CD-drive APIs on macOS and direct SCSI
+//! commands on Windows and Linux. The library abstracts both access to the drive
+//! and reading the data, so callers do not interact with the hardware directly.
+//! It operates entirely in user space.
+//!
+//! A typical drive-backed read happens in this order:
 //!
 //! 1. Get a CD drive's handle
 //! 2. Read the ToC (table of contents) of the audio CD
@@ -37,7 +39,7 @@
 //! let selected = drives
 //!     .iter()
 //!     .find(|drive| drive.has_audio_cd) // we check for audio by checking ToC
-//!     .ok_or("no optical drives found")?;
+//!     .ok_or("no drive with an audio CD found")?;
 //!
 //! let reader = CdReader::open(selected)?;
 //! # Ok::<(), Box<dyn std::error::Error>>(())
@@ -59,8 +61,12 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! The returned [`Toc`] contains a [`Vec<Track>`](Track) where each entry has
-//! two equivalent address fields:
+//! The returned [`Toc`] contains a [`Vec<Track>`](Track). Each [`Track`] reports
+//! its disc track number in [`Track::number`] and whether it contains audio in
+//! [`Track::is_audio`]. Track numbers are not zero-based indices into
+//! [`Toc::tracks`] and are not guaranteed to begin at 1 (but they usually do).
+//!
+//! Each track also has two equivalent address fields:
 //!
 //! - **`start_lba`** -- Logical Block Address, which is a sector index.
 //!   LBA 0 is the first readable sector after the 2-second lead-in pre-gap.
@@ -73,8 +79,9 @@
 //!
 //! ## Reading tracks
 //!
-//! Pass the [`Toc`] and a track number to [`CdReader::read_track`]. The
-//! library calculates the sector boundaries automatically. On CD-Extra discs
+//! Pass the [`Toc`] and the track's [`Track::number`] to
+//! [`CdReader::read_track`]. The library calculates the sector boundaries
+//! automatically. On CD-Extra discs
 //! where the last audio track is followed only by data tracks, the trailing
 //! audio/data session gap is excluded from the audio read -- this is usually
 //! what you want, and you can read custom range by using [`CdReader::read_sector_range`].
@@ -84,16 +91,28 @@
 //!
 //! let reader = CdReader::open_default()?;
 //! let toc = reader.read_toc()?;
-//! let data = reader.read_track(&toc, 1)?; // we assume track #1 exists and is audio
+//!
+//! // Track numbers come from the disc; do not assume the first audio track is #1.
+//! let track = toc
+//!     .tracks
+//!     .iter()
+//!     .find(|track| track.is_audio)
+//!     .ok_or("no audio tracks found")?;
+//! let data = reader.read_track(&toc, track.number)?;
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! This is a blocking call. Due to physical nature of CDs and large size of files, it
-//! can take quite a while even at optimal read speed, easily 30+ seconds. If you present
-//! any sort of interactive UI, this can be bad experience and can be mitigated by using
-//! the streaming API instead. It works by reading chunks and returning it to you directly,
-//! which can be helpful for fast and responsive live playback, or for displaying progress.
-//! Use [`CdReader::open_track_stream`] and [`TrackStream::next_chunk`] calls for that:
+//! [`CdReader::read_track`] is a blocking call that buffers the complete track,
+//! so it can take some time and use hundreds of megabytes of memory. The
+//! streaming API instead returns sector-aligned chunks as they are read, which
+//! keeps memory usage low and supports progress reporting or playback before the
+//! complete track is available.
+//!
+//! Streaming is still synchronous: each [`TrackStream::next_chunk`] call waits
+//! for the drive to return the next chunk. This is often suitable for a CLI,
+//! where the read loop can run on the main thread and report progress. A GUI
+//! should run the loop on a worker thread so drive reads do not block its event
+//! loop. Open a stream with [`CdReader::open_track_stream`]:
 //!
 //! ```no_run
 //! use cd_da_reader::CdReader;
@@ -101,26 +120,34 @@
 //! let reader = CdReader::open_default()?;
 //! let toc = reader.read_toc()?;
 //!
-//! let mut stream = reader.open_track_stream(&toc, 1)?;
+//! // Select by track metadata rather than assuming track #1 contains audio.
+//! let track = toc
+//!     .tracks
+//!     .iter()
+//!     .find(|track| track.is_audio)
+//!     .ok_or("no audio tracks found")?;
+//! let mut stream = reader.open_track_stream(&toc, track.number)?;
 //! while let Some(chunk) = stream.next_chunk()? {
 //!     // process chunk — raw PCM, 2 352 bytes per sector
 //! }
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! ## Track format
+//! ## Audio track format
 //!
-//! Track data is raw [PCM](https://en.wikipedia.org/wiki/Pulse-code_modulation),
-//! the same format used inside WAV files. Audio CDs use 16-bit stereo PCM
-//! sampled at 44 100 Hz:
+//! Audio track data is raw
+//! [PCM](https://en.wikipedia.org/wiki/Pulse-code_modulation), the same
+//! uncompressed sample representation used by PCM WAV files. Audio CDs use
+//! signed 16-bit little-endian stereo PCM sampled at 44,100 Hz:
 //!
 //! ```text
-//! 44 100 samples * 2 channels * 2 bytes = 176 400 bytes/second
+//! 44,100 sample frames * 2 channels * 2 bytes = 176,400 bytes/second
 //! ```
 //!
-//! Each sector holds exactly 2 352 bytes (176 400 ÷ 75 = 2 352), that's where
-//! 75 sectors per second comes from. A typical 3-minute track is
-//! ~31 MB; a full 74-minute CD is ~650 MB.
+//! Each audio sector holds exactly 2,352 bytes (176,400 ÷ 75 = 2,352), which
+//! gives 75 sectors per second. A typical 3-minute track is about 31.8 MB
+//! (30.3 MiB). A 74-minute disc contains about 783 MB (747 MiB) of raw PCM;
+//! common 80-minute media contains about 847 MB (808 MiB).
 //!
 //! Converting raw PCM to a playable WAV file only requires prepending a 44-byte
 //! RIFF header — [`create_wav`] does exactly that:
@@ -130,9 +157,15 @@
 //!
 //! let reader = CdReader::open_default()?;
 //! let toc = reader.read_toc()?;
-//! let data = reader.read_track(&toc, 1)?;
+//! let track = toc
+//!     .tracks
+//!     .iter()
+//!     .find(|track| track.is_audio)
+//!     .ok_or("no audio tracks found")?;
+//! let data = reader.read_track(&toc, track.number)?;
 //! let wav = create_wav(data);
-//! std::fs::write("track01.wav", wav)?;
+//! let output = format!("track{:02}.wav", track.number);
+//! std::fs::write(output, wav)?;
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
@@ -164,11 +197,16 @@
 //!
 //! let reader = CdReader::open_default()?;
 //! let toc = reader.read_toc()?;
+//! let track = toc
+//!     .tracks
+//!     .iter()
+//!     .find(|track| track.is_audio)
+//!     .ok_or("no audio tracks found")?;
 //! let options = ReadOptions::default()
 //!     .with_format(SectorReadFormat::Audio)
 //!     .with_retry(RetryConfig::default().with_max_attempts(6))
 //!     .with_read_speed(ReadSpeed::CustomMultiplier(4));
-//! let data = reader.read_track_with_options(&toc, 1, &options)?;
+//! let data = reader.read_track_with_options(&toc, track.number, &options)?;
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
