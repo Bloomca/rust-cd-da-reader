@@ -1,4 +1,9 @@
-/// Sector format requested through the READ CD (0xBE) command.
+/// Sector format requested through the READ CD (0xBE) command. This library's
+/// primary goal is to read audio CDs, so in most cases you don't need to touch
+/// this enum, as the mode is derived automatically and for audio tracks it is
+/// [`SectorReadFormat::Audio`]. However, if you want to read data tracks, they
+/// can be either Mode1 or Mode2. There is a helper function [`CdReader::detect_track_format`],
+/// which will do its best to detect the format based on the data format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SectorReadFormat {
     /// CD-DA audio: 2352 bytes of PCM per sector.
@@ -6,12 +11,14 @@ pub enum SectorReadFormat {
     /// Mode 1 user data only: 2048 bytes per sector.
     Mode1Cooked,
     /// Complete Mode 1 sector: 2352 bytes with sync, header, user data, EDC,
-    /// and ECC.
+    /// and ECC. Typically you only need payload, so usually [`SectorReadFormat::Mode1Cooked`]
+    /// is the one you want.
     Mode1Raw,
     /// Complete Mode 2 sector: 2352 bytes.
     ///
-    /// Mode 2 forms are a per-sector property. Consumers that need the
-    /// application payload must inspect each sector's XA subheader.
+    /// Mode 2 forms are a per-sector property, meaning that it can interleave different
+    /// variations in the same track (called Form 1 and Form 2). This library does not provide
+    /// any helpers to detect the form and payload, so you need to manually inspect the output.
     Mode2Raw,
 }
 
