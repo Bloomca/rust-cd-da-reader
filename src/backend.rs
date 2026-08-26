@@ -49,63 +49,112 @@ impl AudioSectorReader for CdReader {
 }
 
 /// A source of raw CD-DA audio sectors.
+/// 
+/// This trait separates source-specific I/O from the crate's track-level logic.
+/// Meaning that you can provide your implementation for any source which can provide
+/// audio CD sectors, like a disc image, decoded container, in-memory disc, or a remote
+/// source. [`read_track`] and [`open_track_stream`] use a caller-provided [`Toc`] to calculate
+/// sector ranges, then retrieve those sectors through [`read_audio_sectors`](Self::read_audio_sectors).
+/// 
+/// Implementations are responsible only for reading sectors. They do not build
+/// the [`Toc`], select tracks, calculate track boundaries, or account for
+/// CD-Extra session gaps. The backing's sector address space must agree with the
+/// `start_lba` and `leadout_lba` values in the supplied `Toc`; layout differences
+/// are expressed separately through [`TrackBounds`].
 ///
-/// Implement this for any backing that can yield audio in the crate's canonical
-/// format: **2352 bytes per sector, 16-bit signed little-endian, stereo, 44100
-/// Hz** — byte-for-byte identical to what
-/// [`CdReader::read_track`](crate::CdReader::read_track) returns.
+/// # Audio format
 ///
-/// `start_lba` is an absolute Logical Block Address (a sector index; LBA 0 is
-/// the first sector after the lead-in), matching
-/// [`Track::start_lba`](crate::Track::start_lba). A successful read of `count`
-/// sectors must return exactly `count * 2352` bytes.
+/// Each sector must contain exactly 2,352 bytes of headerless PCM audio:
 ///
-/// The read takes `&self`, matching [`CdReader`]. A backing that needs a mutable
-/// handle (an open `File`, a decoder) should use positioned reads
-/// (`read_at`/`seek_read`) or interior mutability so shared-borrow reads stay
-/// possible.
+/// - 44,100 sample frames per second
+/// - signed 16-bit little-endian samples
+/// - two interleaved channels, left followed by right
+/// - 588 stereo sample frames per sector
+///
+/// One sector therefore represents 1/75 second of audio. Returned data must not
+/// include a WAV header, CD sector headers, subchannel data, or padding. It is
+/// byte-for-byte compatible with [`CdReader::read_track`] and can be passed
+/// directly to [`create_wav`].
+///
+/// # Addressing and read semantics
+///
+/// `start_lba` is an absolute sector index within the backing, not an offset
+/// relative to a track. A request covers the half-open range
+/// `start_lba..start_lba + count`.
+///
+/// Calls are independent and may be repeated or issued out of order, such as
+/// after seeking a stream. On success, the returned vector must contain exactly
+/// `count * 2352` bytes. A zero-sector request should return an empty vector.
+/// Invalid ranges, short reads, and decoding or I/O failures must return an
+/// error rather than partial data.
+///
+/// The method takes `&self` so callers can retain a shared reference to the
+/// source. Implementations backed by a mutable file cursor or decoder should
+/// use positioned reads or interior mutability.
 pub trait AudioSectorReader {
-    /// Error type produced by this backing.
+    /// Error produced when this backing cannot satisfy a sector read.
     ///
-    /// Bounded here rather than at each call site so an unusable error type
-    /// (`String`, say) is rejected at the `impl` — where the fix is — instead of
-    /// compiling happily and then failing at every [`read_track`] call. The
-    /// bound is what lets a failure be reported as
-    /// [`CdReaderError::Backend`], which keeps this error as its boxed
-    /// [`source`](std::error::Error::source).
+    /// Helper APIs preserve this error as the source of [`CdReaderError::Backend`].
     type Error: std::error::Error + Send + Sync + 'static;
 
-    /// Read `count` sectors starting at absolute `start_lba`, returning exactly
-    /// `count * 2352` bytes of little-endian PCM.
+    /// Read the sector range `start_lba..start_lba + count`.
+    ///
+    /// A successful call returns exactly `count * 2352` bytes in the format
+    /// described by [`AudioSectorReader`].
     ///
     /// # Errors
     ///
-    /// Implementations must return an error if they cannot provide the complete
-    /// requested sector range in the required format.
+    /// Returns an error if the complete requested range cannot be returned.
     fn read_audio_sectors(&self, start_lba: u32, count: u32) -> Result<Vec<u8>, Self::Error>;
 }
 
-/// How a track's sector range is resolved from a [`Toc`].
+/// Policy for deriving a track's half-open sector range from a [`Toc`].
 ///
-/// The two policies differ on exactly one track: the **last audio track before a
-/// trailing data session** on a CD-Extra disc. Every other track resolves
-/// identically. Which one to use depends on whether the TOC's addressing includes
-/// the inter-session gap — a property of how the source is laid out, not of
-/// physical-vs-image.
+/// A track begins at its own [`Track::start_lba`](crate::Track::start_lba).
+/// Normally it ends at the next track's `start_lba`, or at
+/// [`Toc::leadout_lba`] when it is the final track.
 ///
-/// - [`SessionGap`](Self::SessionGap) subtracts the inter-session gap (matching
-///   [`CdReader::read_track`](crate::CdReader::read_track)) — for a physical disc,
-///   or any image whose TOC preserves the disc's real LBAs.
-/// - [`Gapless`](Self::Gapless) does not: when tracks are addressed back-to-back
-///   (a gap-stripped extract), a track spans from its `start_lba` to the next
-///   track's start (or the leadout). Subtracting a gap that isn't there would drop
-///   ~2.5 min of real audio.
+/// # CD-Extra session gaps
+///
+/// A CD-Extra disc places a standard 11,400-sector inter-session gap between
+/// its final audio track and the following data session. This is 152 seconds,
+/// or 2 minutes 32 seconds. In a geometry-preserving address space, the first
+/// data track's `start_lba` lies after that gap, so treating it as the audio
+/// track's end would incorrectly include the gap in the audio range.
+///
+/// Some image formats and extracts remove the inter-session gap and store the
+/// tracks back-to-back. In that layout, the next track's `start_lba` is already
+/// the correct end of the audio track; subtracting 11,400 sectors would instead
+/// truncate 152 seconds of audio.
+///
+/// This policy affects only the last audio track followed exclusively by data
+/// tracks. All other tracks have identical bounds under both variants.
+///
+/// Choose the variant according to the address space represented jointly by the
+/// backing and its `Toc`:
+///
+/// - [`SessionGap`](Self::SessionGap) for a physical disc or an image that
+///   preserves the disc's original sector geometry.
+/// - [`Gapless`](Self::Gapless) for a contiguous, gap-stripped image or extract.
+///
+/// `Gapless` refers only to the CD-Extra inter-session gap. It does not remove
+/// ordinary track pregaps or provide gapless playback.
+///
+/// [`read_track`] and [`open_track_stream`] use [`SessionGap`](Self::SessionGap)
+/// by default. Use [`read_track_with_bounds`] or
+/// [`open_track_stream_with_bounds`] when the source requires an explicit
+/// policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrackBounds {
-    /// Addressing includes the CD-Extra inter-session gap: apply the trailing-gap
-    /// rule. Correct for a physical disc or a geometry-preserving image.
+    /// The address space includes the CD-Extra inter-session gap.
+    ///
+    /// When applicable, the final audio track ends 11,400 sectors before the
+    /// following data track.
     SessionGap,
-    /// Tracks are addressed contiguously (gap stripped): no gap subtraction.
+    /// The address space stores tracks contiguously without the CD-Extra
+    /// inter-session gap.
+    ///
+    /// Every track ends at the next track's start, or at the lead-out.
     Gapless,
 }
 
@@ -118,25 +167,38 @@ impl TrackBounds {
     }
 }
 
-/// Read raw PCM for one track from any [`AudioSectorReader`] backing, assuming
-/// the TOC includes the CD-Extra inter-session gap ([`TrackBounds::SessionGap`]).
+/// Reads one complete audio track from an [`AudioSectorReader`] into memory.
 ///
-/// This is the file/image counterpart to
-/// [`CdReader::read_track`](crate::CdReader::read_track): it resolves the track's
-/// sector range from `toc` (honouring the CD-Extra trailing-gap rule) and pulls
-/// those sectors from `src`. The returned bytes are the same little-endian,
-/// 2352-B/sector PCM, so [`create_wav`](crate::create_wav) wraps them into a
-/// playable file unchanged.
+/// `track_no` is the disc track number stored in [`Track::number`](crate::Track::number),
+/// not an index into [`Toc::tracks`](crate::Toc::tracks). The source and the
+/// `Toc` must use the same LBA address space.
 ///
-/// If the backing addresses tracks contiguously without gaps, use
+/// This convenience function resolves the track's sector range using
+/// [`TrackBounds::SessionGap`]. That policy is appropriate for physical discs
+/// and images that preserve the original CD geometry, including the CD-Extra
+/// inter-session gap. For a contiguous, gap-stripped source, use
 /// [`read_track_with_bounds`] with [`TrackBounds::Gapless`].
+///
+/// The returned vector contains headerless CD-DA PCM in the format required by
+/// [`AudioSectorReader`]: signed 16-bit little-endian stereo at 44.1 kHz, with
+/// 2,352 bytes per sector. It can be passed directly to
+/// [`create_wav`](crate::create_wav).
+///
+/// This is a blocking operation that buffers the entire track, which may require
+/// hundreds of megabytes. Use [`open_track_stream`] or
+/// [`open_track_stream_with_bounds`] to process the track incrementally.
+///
+/// Only audio tracks are meaningful for this API. Callers should select a track
+/// whose [`Track::is_audio`](crate::Track::is_audio) field is `true`.
 ///
 /// # Errors
 ///
-/// A bad track request (not in the TOC, or invalid bounds) is
-/// [`CdReaderError::Io`]; a failure inside the backing is
-/// [`CdReaderError::Backend`], which preserves the backing's own error as the
-/// boxed [`source`](std::error::Error::source).
+/// Returns [`CdReaderError::Io`] if `track_no` is absent from the `Toc` or its
+/// calculated sector bounds are invalid.
+///
+/// Returns [`CdReaderError::Backend`] if the source cannot read the requested
+/// sectors. The source's original error is preserved as the boxed
+/// [`source`](std::error::Error::source).
 pub fn read_track<R: AudioSectorReader>(
     src: &R,
     toc: &Toc,
@@ -145,13 +207,29 @@ pub fn read_track<R: AudioSectorReader>(
     read_track_with_bounds(src, toc, track_no, TrackBounds::SessionGap)
 }
 
-/// Read one track like [`read_track`], but with an explicit [`TrackBounds`]
-/// geometry — pass [`TrackBounds::Gapless`] for a contiguous, gap-stripped layout.
+/// Reads one complete audio track into memory using an explicit [`TrackBounds`] policy.
+///
+/// This is the configurable form of [`read_track`], which always uses
+/// [`TrackBounds::SessionGap`]. The `bounds` argument controls how the track's
+/// end LBA is calculated from the `Toc`, specifically whether the CD-Extra
+/// inter-session gap is present in the source's address space.
+///
+/// Use [`TrackBounds::SessionGap`] for a physical disc or geometry-preserving
+/// image. Use [`TrackBounds::Gapless`] for a contiguous, gap-stripped source.
+///
+/// The source and `Toc` must use the same LBA address space. All other behavior,
+/// including the returned PCM format and whole-track buffering, is identical to
+/// [`read_track`]. Use [`open_track_stream_with_bounds`] to process the track
+/// incrementally with an explicit bounds policy.
 ///
 /// # Errors
 ///
-/// Returns [`CdReaderError::Io`] if the track is absent or its bounds are
-/// invalid, and [`CdReaderError::Backend`] if the backing read fails.
+/// Returns [`CdReaderError::Io`] if the track is absent from the `Toc` or its
+/// calculated sector bounds are invalid.
+///
+/// Returns [`CdReaderError::Backend`] if the source cannot read the requested
+/// sectors. The source's original error is preserved as the error's
+/// [`source`](std::error::Error::source).
 pub fn read_track_with_bounds<R: AudioSectorReader>(
     src: &R,
     toc: &Toc,
@@ -163,16 +241,35 @@ pub fn read_track_with_bounds<R: AudioSectorReader>(
         .map_err(|e| CdReaderError::Backend(Box::new(e)))
 }
 
-/// Streaming reader over an [`AudioSectorReader`] backing — the file/image
-/// counterpart to [`TrackStream`](crate::TrackStream).
+/// A pull-based, sector-aligned stream of raw CD-DA PCM from an [`AudioSectorReader`].
 ///
-/// Pulls a track's PCM in sector-aligned chunks with
-/// [`next_chunk`](Self::next_chunk) instead of buffering the whole track, so a
-/// player can start immediately and hold only one chunk at a time. Open one
-/// with [`open_track_stream`] (TOC + physical geometry),
-/// [`open_track_stream_with_bounds`] (TOC + explicit [`TrackBounds`]), or
-/// [`open_track_stream_at`] (an explicit absolute sector range, for backings
-/// that compute their own bounds).
+/// An `AudioTrackStream` borrows its source and represents a fixed sector
+/// range. Each call to [`next_chunk`](Self::next_chunk) synchronously reads and
+/// returns the next portion of that range. Once all sectors have been consumed,
+/// it returns `Ok(None)`.
+///
+/// Unlike [`read_track`], the stream does not allocate or retain the entire
+/// track. Callers can process and discard each returned chunk before requesting
+/// the next one. Chunks contain complete CD-DA sectors in the format specified
+/// by [`AudioSectorReader`]; the final chunk may contain fewer sectors than the
+/// configured chunk size.
+///
+/// The chunk size can be changed with [`with_sectors_per_chunk`](Self::with_sectors_per_chunk).
+/// Stream position is relative to the beginning of its sector range and can be inspected
+/// or changed with [`current_sector`](Self::current_sector), [`seek_to_sector`](Self::seek_to_sector),
+/// and [`seek_to_seconds`](Self::seek_to_seconds).
+///
+/// Create a stream with:
+///
+/// - [`open_track_stream`] to resolve a track from a `Toc` using
+///   [`TrackBounds::SessionGap`].
+/// - [`open_track_stream_with_bounds`] to resolve a track using an explicit
+///   [`TrackBounds`] policy.
+/// - [`open_track_stream_at`] to stream an explicit absolute sector range
+///   without consulting a `Toc`.
+///
+/// This is the source-independent audio counterpart to [`TrackStream`](crate::TrackStream),
+/// which is tied to [`CdReader`] and supports drive-specific read options and data-sector formats.
 pub struct AudioTrackStream<'a, R: AudioSectorReader> {
     src: &'a R,
     start_lba: u32,
