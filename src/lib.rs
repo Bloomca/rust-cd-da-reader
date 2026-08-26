@@ -253,11 +253,15 @@ pub struct Toc {
     pub leadout_lba: u32,
 }
 
-/// Wrap raw CD-DA PCM in a 44-byte WAV/RIFF header (44100 Hz, 2 channels,
-/// 16-bit) so the bytes become a playable file.
+/// Prepends a standard 44-byte RIFF/WAVE header to raw CD-DA PCM.
 ///
-/// Use this with PCM returned by [`CdReader::read_track`] or obtained from a
-/// file or image backing via [`read_track`].
+/// `data` must already contain headerless, signed 16-bit little-endian,
+/// interleaved stereo PCM sampled at 44,100 Hz. This function does not validate
+/// or convert the audio data; it only adds a header describing that format.
+///
+/// PCM returned by [`CdReader::read_track`] or the source-independent
+/// [`read_track`] function already has the required format. The returned vector
+/// contains a complete WAV file and can be written directly to a `.wav` file.
 pub fn create_wav(data: Vec<u8>) -> Vec<u8> {
     let mut header = utils::create_wav_header(data.len() as u32);
     header.extend_from_slice(&data);
