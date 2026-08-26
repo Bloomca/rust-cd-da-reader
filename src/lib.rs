@@ -138,21 +138,26 @@
 //!
 //! ## Read options
 //!
-//! [`CdReader::read_track`] and [`CdReader::open_track_stream`] use sensible defaults for audio
-//! CDs and should be enough to get started. For more control, build [`ReadOptions`] from its
-//! defaults and pass it to [`CdReader::read_track_with_options`] or
-//! [`CdReader::open_track_stream_with_options`]. The configurable options are:
+//! [`CdReader::read_track`] and [`CdReader::open_track_stream`] use the
+//! [`ReadOptions`] defaults: CD-DA audio sectors, the default retry policy, and
+//! no read-speed change. These settings are sufficient for most audio reads.
+//! 
+//! For more control, start with `ReadOptions::default()` and pass the configured
+//! options to [`CdReader::read_track_with_options`] or [`CdReader::open_track_stream_with_options`].
+//! The configurable options are:
 //!
-//! - **Sector format:** If you only use this library for audio tracks, you don't need to touch
-//!   this option. If you want to read data tracks, look at [`SectorReadFormat`] for more information
-//!   on mode types. There is a [`CdReader::detect_track_format`] helper to detect the format.
-//! - **Retry policy:** [`RetryConfig`] controls the number of attempts, retry delays, and adaptive
-//!   reduction of the number of sectors read at once. Its defaults are suitable for most drives
-//!   and provides reliably reads.
-//! - **Read speed:** [`ReadSpeed`] requests an optimal or custom drive speed. The default,
-//!   [`ReadSpeed::Unchanged`], leaves the current setting alone. Requested speeds are not
-//!   guaranteed, and the previous drive setting is not restored after the read. Speed settings
-//!   are drive and OS dependent.
+//! - **Sector format:** [`SectorReadFormat`] controls the type and layout of
+//!   sectors returned by the drive. [`SectorReadFormat::Audio`] is the default.
+//!   For a data track, [`CdReader::detect_track_format`] can select an
+//!   appropriate default format to pass to [`ReadOptions::with_format`].
+//! - **Retry policy:** [`RetryConfig`] controls the number of attempts, retry
+//!   delays, and adaptive reduction of the number of sectors requested after a
+//!   failed read. Its defaults are suitable for most drives.
+//! - **Read speed:** [`ReadSpeed`] requests an automatic or custom drive speed.
+//!   The default, [`ReadSpeed::Unchanged`], issues no speed-change request.
+//!   Requested speeds are not guaranteed, and this crate does not restore the
+//!   previous drive setting afterward. Speed behavior depends on the OS and
+//!   drive firmware.
 //!
 //! ```no_run
 //! use cd_da_reader::{CdReader, ReadOptions, ReadSpeed, RetryConfig, SectorReadFormat};
