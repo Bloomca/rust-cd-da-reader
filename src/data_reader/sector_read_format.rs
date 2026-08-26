@@ -1,17 +1,61 @@
-/// Sector format requested through the READ CD (0xBE) command.
+/// Selects the type and layout of sectors returned when reading from an optical drive.
+///
+/// This is the crate's platform-independent representation of the sector type and
+/// main-channel fields requested by the MMC `READ CD` command (`0xBE`) or the
+/// equivalent platform API.
+///
+/// [`ReadOptions`](crate::ReadOptions) defaults to [`Audio`](Self::Audio), so
+/// callers reading audio tracks normally do not need to select a format. For a
+/// data track, call
+/// [`CdReader::detect_track_format`](crate::CdReader::detect_track_format) and
+/// pass the result to [`ReadOptions::with_format`](crate::ReadOptions::with_format). Detection
+/// chooses [`Mode1Cooked`](Self::Mode1Cooked) for Mode 1 tracks and
+/// [`Mode2Raw`](Self::Mode2Raw) for Mode 2 tracks.
+///
+/// Selecting a format does not convert the sectors. It tells the drive what
+/// sector type and fields to return, so the selection must match the track being
+/// read. A mismatched format may be rejected by the library or the drive.
+///
+/// The `Raw` variants return the complete 2,352-byte main-channel sector. They
+/// do not include subchannel data or C2 error information. Use
+/// [`sector_size`](Self::sector_size) to obtain the number of bytes returned per
+/// sector for any variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SectorReadFormat {
-    /// CD-DA audio: 2352 bytes of PCM per sector.
-    Audio,
-    /// Mode 1 user data only: 2048 bytes per sector.
-    Mode1Cooked,
-    /// Complete Mode 1 sector: 2352 bytes with sync, header, user data, EDC,
-    /// and ECC.
-    Mode1Raw,
-    /// Complete Mode 2 sector: 2352 bytes.
+    /// CD-DA audio as 2,352 bytes of headerless PCM per sector.
     ///
-    /// Mode 2 forms are a per-sector property. Consumers that need the
-    /// application payload must inspect each sector's XA subheader.
+    /// The samples are signed 16-bit little-endian stereo at 44.1 kHz. Each
+    /// sector contains 588 stereo sample frames and represents 1/75 second of
+    /// audio. The returned bytes can be passed directly to [`create_wav`](crate::create_wav).
+    Audio,
+
+    /// The 2,048-byte user-data field from a Mode 1 sector.
+    ///
+    /// The drive omits the sync pattern, sector header, Error Detection Code
+    /// (EDC), reserved bytes, and Error Correction Code (ECC). This is usually
+    /// the preferred representation for reading filesystems; concatenating the
+    /// cooked sectors of a typical ISO 9660 track produces a directly usable
+    /// disc image.
+    Mode1Cooked,
+
+    /// A complete 2,352-byte Mode 1 main-channel sector.
+    ///
+    /// This includes the 12-byte sync pattern, 4-byte header, 2,048-byte user
+    /// data field, EDC, reserved bytes, and ECC. Use this when preserving or
+    /// inspecting the original sector framing. For normal filesystem access,
+    /// [`Mode1Cooked`](Self::Mode1Cooked) is usually more convenient.
+    Mode1Raw,
+
+    /// A complete 2,352-byte Mode 2 main-channel sector.
+    ///
+    /// This is the only Mode 2 representation provided by the crate. Mode 2 XA
+    /// tracks can mix Form 1 and Form 2 sectors within the same track: Form 1
+    /// carries 2,048 bytes of user data with stronger error correction, while
+    /// Form 2 carries 2,324 bytes of user data.
+    ///
+    /// The form is recorded in each sector's XA subheader. The crate does not
+    /// expose a cooked Mode 2 reader or a public XA payload parser, so callers
+    /// must inspect each sector and extract the appropriate payload themselves.
     Mode2Raw,
 }
 

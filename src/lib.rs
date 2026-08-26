@@ -1,15 +1,17 @@
 //! # CD-DA (audio CD) reading library
 //!
 //! This library provides cross-platform audio CD reading capabilities (tested
-//! on Windows, macOS and Linux). It was written to enable CD ripping, but you
-//! can also implement a live audio CD player with its help, and implement
-//! reading using your own files if you can provide ToC (table of contents) by
-//! yourself. The library works through platform CD-drive APIs on macOS and
-//! issuing direct SCSI commands on Windows and Linux and abstracts both access
-//! to the CD drive and reading the actual data from it, so you don't deal with
-//! the hardware directly. The library works in the userland.
+//! on Windows, macOS and Linux). It was written to enable CD ripping, but it can
+//! also be used to build a live audio CD player. The primary API reads physical
+//! discs; to read from a file, image, or another custom source, implement
+//! [`AudioSectorReader`] and provide a [`Toc`].
 //!
-//! All CD reading operations happen in this order:
+//! Physical-disc access uses platform CD-drive APIs on macOS and direct SCSI
+//! commands on Windows and Linux. The library abstracts both access to the drive
+//! and reading the data, so callers do not interact with the hardware directly.
+//! It operates entirely in user space.
+//!
+//! A typical drive-backed read happens in this order:
 //!
 //! 1. Get a CD drive's handle
 //! 2. Read the ToC (table of contents) of the audio CD
@@ -34,7 +36,11 @@
 //! use cd_da_reader::CdReader;
 //!
 //! let drives = CdReader::list_drives()?;
-//! let selected = drives.first().ok_or("no optical drives found")?;
+//! let selected = drives
+//!     .iter()
+//!     .find(|drive| drive.has_audio_cd) // we check for audio by checking ToC
+//!     .ok_or("no drive with an audio CD found")?;
+//!
 //! let reader = CdReader::open(selected)?;
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
@@ -55,8 +61,12 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! The returned [`Toc`] contains a [`Vec<Track>`](Track) where each entry has
-//! two equivalent address fields:
+//! The returned [`Toc`] contains a [`Vec<Track>`](Track). Each [`Track`] reports
+//! its disc track number in [`Track::number`] and whether it contains audio in
+//! [`Track::is_audio`]. Track numbers are not zero-based indices into
+//! [`Toc::tracks`] and are not guaranteed to begin at 1 (but they usually do).
+//!
+//! Each track also has two equivalent address fields:
 //!
 //! - **`start_lba`** -- Logical Block Address, which is a sector index.
 //!   LBA 0 is the first readable sector after the 2-second lead-in pre-gap.
@@ -69,22 +79,40 @@
 //!
 //! ## Reading tracks
 //!
-//! Pass the [`Toc`] and a track number to [`CdReader::read_track`]. The
-//! library calculates the sector boundaries automatically. On CD-Extra discs
+//! Pass the [`Toc`] and the track's [`Track::number`] to
+//! [`CdReader::read_track`]. The library calculates the sector boundaries
+//! automatically. On CD-Extra discs
 //! where the last audio track is followed only by data tracks, the trailing
-//! audio/data session gap is excluded from the audio read.
+//! audio/data session gap is excluded from the audio read -- this is usually
+//! what you want, and you can read custom range by using [`CdReader::read_sector_range`].
 //!
 //! ```no_run
 //! use cd_da_reader::CdReader;
 //!
 //! let reader = CdReader::open_default()?;
 //! let toc = reader.read_toc()?;
-//! let data = reader.read_track(&toc, 1)?; // we assume track #1 exists and is audio
+//!
+//! // Track numbers come from the disc; do not assume the first audio track is #1.
+//! let track = toc
+//!     .tracks
+//!     .iter()
+//!     .find(|track| track.is_audio)
+//!     .ok_or("no audio tracks found")?;
+//! let data = reader.read_track(&toc, track.number)?;
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! This is a blocking call. For a live-playback or progress-reporting use case,
-//! use the streaming API instead:
+//! [`CdReader::read_track`] is a blocking call that buffers the complete track,
+//! so it can take some time and use hundreds of megabytes of memory. The
+//! streaming API instead returns sector-aligned chunks as they are read, which
+//! keeps memory usage low and supports progress reporting or playback before the
+//! complete track is available.
+//!
+//! Streaming is still synchronous: each [`TrackStream::next_chunk`] call waits
+//! for the drive to return the next chunk. This is often suitable for a CLI,
+//! where the read loop can run on the main thread and report progress. A GUI
+//! should run the loop on a worker thread so drive reads do not block its event
+//! loop. Open a stream with [`CdReader::open_track_stream`]:
 //!
 //! ```no_run
 //! use cd_da_reader::CdReader;
@@ -92,26 +120,34 @@
 //! let reader = CdReader::open_default()?;
 //! let toc = reader.read_toc()?;
 //!
-//! let mut stream = reader.open_track_stream(&toc, 1)?;
+//! // Select by track metadata rather than assuming track #1 contains audio.
+//! let track = toc
+//!     .tracks
+//!     .iter()
+//!     .find(|track| track.is_audio)
+//!     .ok_or("no audio tracks found")?;
+//! let mut stream = reader.open_track_stream(&toc, track.number)?;
 //! while let Some(chunk) = stream.next_chunk()? {
 //!     // process chunk — raw PCM, 2 352 bytes per sector
 //! }
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! ## Track format
+//! ## Audio track format
 //!
-//! Track data is raw [PCM](https://en.wikipedia.org/wiki/Pulse-code_modulation),
-//! the same format used inside WAV files. Audio CDs use 16-bit stereo PCM
-//! sampled at 44 100 Hz:
+//! Audio track data is raw
+//! [PCM](https://en.wikipedia.org/wiki/Pulse-code_modulation), the same
+//! uncompressed sample representation used by PCM WAV files. Audio CDs use
+//! signed 16-bit little-endian stereo PCM sampled at 44,100 Hz:
 //!
 //! ```text
-//! 44 100 samples * 2 channels * 2 bytes = 176 400 bytes/second
+//! 44,100 sample frames * 2 channels * 2 bytes = 176,400 bytes/second
 //! ```
 //!
-//! Each sector holds exactly 2 352 bytes (176 400 ÷ 75 = 2 352), that's where
-//! 75 sectors per second comes from. A typical 3-minute track is
-//! ~31 MB; a full 74-minute CD is ~650 MB.
+//! Each audio sector holds exactly 2,352 bytes (176,400 ÷ 75 = 2,352), which
+//! gives 75 sectors per second. A typical 3-minute track is about 31.8 MB
+//! (30.3 MiB). A 74-minute disc contains about 783 MB (747 MiB) of raw PCM;
+//! common 80-minute media contains about 847 MB (808 MiB).
 //!
 //! Converting raw PCM to a playable WAV file only requires prepending a 44-byte
 //! RIFF header — [`create_wav`] does exactly that:
@@ -121,42 +157,56 @@
 //!
 //! let reader = CdReader::open_default()?;
 //! let toc = reader.read_toc()?;
-//! let data = reader.read_track(&toc, 1)?;
+//! let track = toc
+//!     .tracks
+//!     .iter()
+//!     .find(|track| track.is_audio)
+//!     .ok_or("no audio tracks found")?;
+//! let data = reader.read_track(&toc, track.number)?;
 //! let wav = create_wav(data);
-//! std::fs::write("track01.wav", wav)?;
+//! let output = format!("track{:02}.wav", track.number);
+//! std::fs::write(output, wav)?;
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
 //! ## Read options
 //!
-//! [`CdReader::read_track`] and [`CdReader::open_track_stream`] use sensible defaults for audio
-//! CDs and should be enough to get started. For more control, build [`ReadOptions`] from its
-//! defaults and pass it to [`CdReader::read_track_with_options`] or
-//! [`CdReader::open_track_stream_with_options`]. The configurable options are:
+//! [`CdReader::read_track`] and [`CdReader::open_track_stream`] use the
+//! [`ReadOptions`] defaults: CD-DA audio sectors, the default retry policy, and
+//! no read-speed change. These settings are sufficient for most audio reads.
 //!
-//! - **Sector format:** [`SectorReadFormat::Audio`] returns 2,352 bytes of PCM per sector and is
-//!   the default. Data tracks can be read as the 2,048-byte [`SectorReadFormat::Mode1Cooked`]
-//!   payload or as complete 2,352-byte [`SectorReadFormat::Mode1Raw`] or
-//!   [`SectorReadFormat::Mode2Raw`] sectors. Mode 2 is available only as raw sectors; inspect
-//!   each sector's XA subheader to locate its payload. Use [`CdReader::detect_track_format`] when
-//!   the data-track format is not already known.
-//! - **Retry policy:** [`RetryConfig`] controls the number of attempts, retry delays, and adaptive
-//!   reduction of the number of sectors read at once. Its defaults are suitable for most drives.
-//! - **Read speed:** [`ReadSpeed`] requests an optimal or custom drive speed. The default,
-//!   [`ReadSpeed::Unchanged`], leaves the current setting alone. Requested speeds are not
-//!   guaranteed, and the previous drive setting is not restored after the read. Speed settings
-//!   are drive and OS dependent.
+//! For more control, start with `ReadOptions::default()` and pass the configured
+//! options to [`CdReader::read_track_with_options`] or [`CdReader::open_track_stream_with_options`].
+//! The configurable options are:
+//!
+//! - **Sector format:** [`SectorReadFormat`] controls the type and layout of
+//!   sectors returned by the drive. [`SectorReadFormat::Audio`] is the default.
+//!   For a data track, [`CdReader::detect_track_format`] can select an
+//!   appropriate default format to pass to [`ReadOptions::with_format`].
+//! - **Retry policy:** [`RetryConfig`] controls the number of attempts, retry
+//!   delays, and adaptive reduction of the number of sectors requested after a
+//!   failed read. Its defaults are suitable for most drives.
+//! - **Read speed:** [`ReadSpeed`] requests an automatic or custom drive speed.
+//!   The default, [`ReadSpeed::Unchanged`], issues no speed-change request.
+//!   Requested speeds are not guaranteed, and this crate does not restore the
+//!   previous drive setting afterward. Speed behavior depends on the OS and
+//!   drive firmware.
 //!
 //! ```no_run
 //! use cd_da_reader::{CdReader, ReadOptions, ReadSpeed, RetryConfig, SectorReadFormat};
 //!
 //! let reader = CdReader::open_default()?;
 //! let toc = reader.read_toc()?;
+//! let track = toc
+//!     .tracks
+//!     .iter()
+//!     .find(|track| track.is_audio)
+//!     .ok_or("no audio tracks found")?;
 //! let options = ReadOptions::default()
 //!     .with_format(SectorReadFormat::Audio)
 //!     .with_retry(RetryConfig::default().with_max_attempts(6))
 //!     .with_read_speed(ReadSpeed::CustomMultiplier(4));
-//! let data = reader.read_track_with_options(&toc, 1, &options)?;
+//! let data = reader.read_track_with_options(&toc, track.number, &options)?;
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
@@ -195,7 +245,7 @@ pub use stream::TrackStream;
 mod parse_toc;
 pub use parse_toc::lba_to_msf;
 
-/// Representation of the track from TOC, purely in terms of data location on the CD.
+/// Representation of the track from ToC, purely in terms of data location on the CD.
 #[derive(Debug)]
 pub struct Track {
     /// Track number from the Table of Contents (read from the CD itself).
@@ -241,11 +291,15 @@ pub struct Toc {
     pub leadout_lba: u32,
 }
 
-/// Wrap raw CD-DA PCM in a 44-byte WAV/RIFF header (44100 Hz, 2 channels,
-/// 16-bit) so the bytes become a playable file.
+/// Prepends a standard 44-byte RIFF/WAVE header to raw CD-DA PCM.
 ///
-/// Use this with PCM returned by [`CdReader::read_track`] or obtained from a
-/// file or image backing via [`read_track`].
+/// `data` must already contain headerless, signed 16-bit little-endian,
+/// interleaved stereo PCM sampled at 44,100 Hz. This function does not validate
+/// or convert the audio data; it only adds a header describing that format.
+///
+/// PCM returned by [`CdReader::read_track`] or the source-independent
+/// [`read_track`] function already has the required format. The returned vector
+/// contains a complete WAV file and can be written directly to a `.wav` file.
 pub fn create_wav(data: Vec<u8>) -> Vec<u8> {
     let mut header = utils::create_wav_header(data.len() as u32);
     header.extend_from_slice(&data);
