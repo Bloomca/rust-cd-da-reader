@@ -34,7 +34,11 @@
 //! use cd_da_reader::CdReader;
 //!
 //! let drives = CdReader::list_drives()?;
-//! let selected = drives.first().ok_or("no optical drives found")?;
+//! let selected = drives
+//!     .iter()
+//!     .find(|drive| drive.has_audio_cd) // we check for audio by checking ToC
+//!     .ok_or("no optical drives found")?;
+//! 
 //! let reader = CdReader::open(selected)?;
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
@@ -72,7 +76,8 @@
 //! Pass the [`Toc`] and a track number to [`CdReader::read_track`]. The
 //! library calculates the sector boundaries automatically. On CD-Extra discs
 //! where the last audio track is followed only by data tracks, the trailing
-//! audio/data session gap is excluded from the audio read.
+//! audio/data session gap is excluded from the audio read -- this is usually
+//! what you want, and you can read custom range by using [`CdReader::read_sector_range`].
 //!
 //! ```no_run
 //! use cd_da_reader::CdReader;
@@ -83,8 +88,12 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! This is a blocking call. For a live-playback or progress-reporting use case,
-//! use the streaming API instead:
+//! This is a blocking call. Due to physical nature of CDs and large size of files, it
+//! can take quite a while even at optimal read speed, easily 30+ seconds. If you present
+//! any sort of interactive UI, this can be bad experience and can be mitigated by using
+//! the streaming API instead. It works by reading chunks and returning it to you directly,
+//! which can be helpful for fast and responsive live playback, or for displaying progress.
+//! Use [`CdReader::open_track_stream`] and [`TrackStream::next_chunk`] calls for that:
 //!
 //! ```no_run
 //! use cd_da_reader::CdReader;
@@ -134,14 +143,12 @@
 //! defaults and pass it to [`CdReader::read_track_with_options`] or
 //! [`CdReader::open_track_stream_with_options`]. The configurable options are:
 //!
-//! - **Sector format:** [`SectorReadFormat::Audio`] returns 2,352 bytes of PCM per sector and is
-//!   the default. Data tracks can be read as the 2,048-byte [`SectorReadFormat::Mode1Cooked`]
-//!   payload or as complete 2,352-byte [`SectorReadFormat::Mode1Raw`] or
-//!   [`SectorReadFormat::Mode2Raw`] sectors. Mode 2 is available only as raw sectors; inspect
-//!   each sector's XA subheader to locate its payload. Use [`CdReader::detect_track_format`] when
-//!   the data-track format is not already known.
+//! - **Sector format:** If you only use this library for audio tracks, you don't need to touch
+//!   this option. If you want to read data tracks, look at [`SectorReadFormat`] for more information
+//!   on mode types. There is a [`CdReader::detect_track_format`] helper to detect the format.
 //! - **Retry policy:** [`RetryConfig`] controls the number of attempts, retry delays, and adaptive
-//!   reduction of the number of sectors read at once. Its defaults are suitable for most drives.
+//!   reduction of the number of sectors read at once. Its defaults are suitable for most drives
+//!   and provides reliably reads.
 //! - **Read speed:** [`ReadSpeed`] requests an optimal or custom drive speed. The default,
 //!   [`ReadSpeed::Unchanged`], leaves the current setting alone. Requested speeds are not
 //!   guaranteed, and the previous drive setting is not restored after the read. Speed settings
