@@ -1,4 +1,7 @@
 /// Representation of read speed requested by the `SET CD SPEED` (0xBB) command.
+/// If you change the speed, keep in mind that the subsequent reads will usually
+/// keep that speed, but you can't rely on it -- this depends on the OS, specific
+/// drive firmware, potentially other factors.
 ///
 /// # Note
 ///
@@ -10,7 +13,7 @@
 /// read speed. The actual behaviour is drive-dependent.
 #[derive(Debug, Clone, Copy)]
 pub enum ReadSpeed {
-    /// Don't change the speed
+    /// Don't change the speed (this is the default option).
     ///
     /// The speed depends on the OS, previous configuration, and other factors.
     Unchanged,
